@@ -1,0 +1,63 @@
+TempoPulse 节拍器 1.0.0 - verification
+======================================
+
+APK
+  file:        TempoPulse-1.0.0.apk
+  size:        444,414 bytes
+  sha256:      0910a2f48a6f77c75b4f1533ef049f3d1a6fe5f78f7c43a77bed526579f5df84
+  package:     com.tempopulse.metronome
+  version:     1.0.0 (versionCode 1)
+  minSdk:      23 (Android 6.0)
+  targetSdk:   35
+  compileSdk:  35
+  permissions: FOREGROUND_SERVICE, FOREGROUND_SERVICE_MEDIA_PLAYBACK,
+               POST_NOTIFICATIONS, VIBRATE, WAKE_LOCK
+  Internet:    not requested
+
+Signature / alignment
+  APK Signature Scheme v1:  verified
+  APK Signature Scheme v2:  verified
+  APK Signature Scheme v3:  verified
+  zipalign -c -p 4:         OK
+  certificate DN:           CN=TempoPulse, OU=Mobile, O=TempoPulse, L=Shanghai, C=CN
+  certificate SHA-256:      f56b06edf38d4342281865bef3917cc859bfd75ef80137060c5328ea5087c7ce
+
+Device test
+  emulator:   Android 13 (API 33), x86_64, 1080x2340, 440 dpi
+  locale:     zh-CN
+  install:    success (adb install -r)
+  launch:     success, no FATAL EXCEPTION / AndroidRuntime crash
+  checks:
+    - cold start and recreation (theme switch)
+    - play / stop, foreground service isForeground=true while playing
+    - notification "节拍器正在播放", "120 BPM · 4/4", action "停止"
+    - notification action stops playback and removes foreground notification
+    - background continuation after HOME
+    - tempo wheel drag, +/- buttons, long-press acceleration
+    - TAP tempo (4 taps -> BPM 100 under adb timing)
+    - 6/8 meter with compound accents: 1 accent, 2 normal, 3 normal,
+      4 accent, 5 normal, 6 normal
+    - per-beat accent toggle, subdivision selection, six sound selections
+    - preset save, load, delete-confirmation layering
+    - dark / light / system theme and accent picker
+    - 118 Chinese resource keys = 118 English resource keys (0 missing)
+
+Audio offline verification
+  ClickSynth generates 6 banks at 48 kHz. Measured peaks are 0.920 for
+  every normal and accent bank; RMS values range 0.076-0.247, so no bank
+  is silent or clipped.
+  audio-preview.wav: 48 kHz, 16-bit, mono, 4.335 s
+  sha256:            ac3c0dfdc91bfd53a94a8a61fc3188af4daaebdf2b7f9534b2416114de01a22d
+  detected onsets:   0.01, 0.51, 1.01, 1.51, 2.01, 2.51, 3.01, 3.51 s
+  detected intervals: 0.500 s x 7 (= exactly 120 BPM)
+
+Caveat
+  The emulator was started headless with -no-audio. AudioTrack initialisation,
+  service lifecycle, notification, UI tick timing and the synthesised PCM data
+  were verified; loudspeaker output and device-specific audio latency still
+  need a final check on physical hardware.
+
+Build
+  toolchain: JDK 17, Android SDK Platform 35, Build-Tools 35.0.0
+  script:    tools/build.ps1
+  signing:   local test key (keystore/tempopulse.jks); replace for release

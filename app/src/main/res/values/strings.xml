@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TempoPulse 节拍器</string>
+    <string name="screen_title">节拍器</string>
+    <string name="tagline">TEMPOPULSE · PRECISION</string>
+    <string name="settings">设置</string>
+    <string name="presets">速度预设</string>
+    <string name="close">关闭</string>
+    <string name="done">完成</string>
+    <string name="cancel">取消</string>
+    <string name="save">保存</string>
+    <string name="delete">删除</string>
+    <string name="about">关于</string>
+
+    <string name="bpm_unit">BPM</string>
+    <string name="play">开始</string>
+    <string name="pause">停止</string>
+    <string name="tap_tempo">TAP 轻点测速</string>
+    <string name="tap_hint">连续轻点，自动计算速度</string>
+    <string name="status_ready">准备就绪</string>
+    <string name="status_playing">正在播放</string>
+    <string name="status_beat">正在播放 · 第 %1$d 拍</string>
+    <string name="status_error">无法启动音频引擎</string>
+    <string name="footer_engine">后台播放 · 精准音频引擎</string>
+    <string name="decrease_tempo">降低速度</string>
+    <string name="increase_tempo">提高速度</string>
+    <string name="offset_value_signed">%1$+d ms</string>
+    <string name="beats_common">常用</string>
+    <string name="beats_waltz">华尔兹</string>
+    <string name="beats_compound">复合拍</string>
+    <string name="beats_duple">二拍</string>
+    <string name="hint_beat">轻点拍点，切换重音 / 静音</string>
+    <string name="hint_beat_mode">第 %1$d 拍 · %2$s</string>
+    <string name="mode_normal">普通</string>
+    <string name="mode_accent">重音</string>
+    <string name="mode_mute">静音</string>
+
+    <string name="presets_subtitle">保存你常用的速度与拍号</string>
+    <string name="preset_empty">还没有保存的预设</string>
+    <string name="preset_empty_desc">调好速度后，把当前设置保存下来。</string>
+    <string name="preset_save_current">保存当前速度</string>
+    <string name="preset_name_hint">预设名称</string>
+    <string name="preset_name_default">%1$d BPM · %2$s</string>
+    <string name="preset_saved">预设已保存</string>
+    <string name="preset_loaded">已加载 · %1$s</string>
+    <string name="preset_deleted">预设已删除</string>
+    <string name="preset_limit">最多可保存 20 个预设</string>
+    <string name="preset_dialog_title">保存预设</string>
+    <string name="preset_dialog_subtitle">为这个速度取一个容易记住的名字</string>
+    <string name="preset_detail">%1$d BPM · %2$s · %3$s</string>
+    <string name="preset_recommended">推荐</string>
+    <string name="preset_mine">我的预设</string>
+    <string name="preset_builtin_slow">慢速练习</string>
+    <string name="preset_builtin_scales">音阶练习</string>
+    <string name="preset_builtin_stage">舞台热身</string>
+    <string name="preset_load">加载</string>
+    <string name="delete_preset_title">删除预设？</string>
+    <string name="delete_preset_message">“%1$s”将从列表中移除。</string>
+
+    <string name="signature">拍号</string>
+    <string name="signature_subtitle">选择每小节拍数与拍值</string>
+    <string name="signature_hint">轻点拍点可单独设置重音或静音</string>
+    <string name="subdivision">细分</string>
+    <string name="subdivision_subtitle">在每拍之间加入更细的脉冲</string>
+    <string name="sound">音色</string>
+    <string name="sound_subtitle">选择节拍器的声音</string>
+    <string name="sound_preview_hint">轻点即可试听并应用</string>
+
+    <string name="settings_subtitle">按你的练习习惯定制</string>
+    <string name="section_appearance">外观</string>
+    <string name="section_playback">播放</string>
+    <string name="section_beat">节拍</string>
+    <string name="theme_mode">主题</string>
+    <string name="theme_dark">深色</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="accent_color">强调色</string>
+    <string name="accent_amber">琥珀</string>
+    <string name="accent_mint">青绿</string>
+    <string name="accent_coral">珊瑚</string>
+    <string name="accent_violet">紫罗兰</string>
+    <string name="volume">音量</string>
+    <string name="volume_desc">节拍声音的响度</string>
+    <string name="keep_awake">保持屏幕常亮</string>
+    <string name="keep_awake_desc">播放时避免屏幕自动熄灭</string>
+    <string name="vibrate">节拍振动</string>
+    <string name="vibrate_desc">在重拍时提供触感反馈</string>
+    <string name="flash">节拍闪屏</string>
+    <string name="flash_desc">重拍时全屏轻微闪光</string>
+    <string name="visual_offset">视觉同步微调</string>
+    <string name="visual_offset_desc">屏幕提示相对声音的延迟，单位毫秒</string>
+    <string name="offset_value">%1$d ms</string>
+    <string name="reset">重置</string>
+    <string name="background_play_title">后台播放</string>
+    <string name="background_play_desc">已启用 · 离开应用后节拍继续</string>
+    <string name="mix_music_title">与音乐同时播放</string>
+    <string name="mix_music_desc">不抢占音频焦点，可与伴奏或录音叠加</string>
+    <string name="accent_help_title">自定义重音</string>
+    <string name="accent_help_desc">轻点拍点循环切换：普通 → 重音 → 静音。第一拍默认为重音。</string>
+    <string name="settings_privacy">隐私与关于</string>
+
+    <string name="about_title">关于 TempoPulse</string>
+    <string name="about_subtitle">为练习与舞台打造的精准节拍器</string>
+    <string name="about_body">TempoPulse 使用直接合成的低延迟音频引擎，让每一拍都稳定、清晰。\n\n• 20–300 BPM，支持圆环拖动与轻点测速\n• 15 种拍号，每拍可单独设置重音或静音\n• 四分、八分、三连音与十六分细分\n• 6 种合成音色，支持后台播放\n• 速度预设、深浅主题与自定义强调色\n\n所有设置仅保存在本机。应用不联网、不收集数据、不包含广告。</string>
+    <string name="about_version">版本 %1$s</string>
+    <string name="about_made">为音乐人而作</string>
+    <string name="notification_channel">节拍器播放</string>
+    <string name="notification_channel_desc">显示正在播放的节拍器</string>
+    <string name="notification_title">节拍器正在播放</string>
+    <string name="notification_text">%1$d BPM · %2$s</string>
+    <string name="notification_stop">停止</string>
+    <string name="notification_start">开始</string>
+    <string name="notification_permission_hint">允许通知可在后台控制节拍器</string>
+    <string name="audio_error">无法启动音频，请检查设备音量或重启应用</string>
+
+    <string name="time_signature_format">%1$d/%2$d</string>
+    <string name="subdivision_short_format">%1$s</string>
+    <string name="beats_description">%1$d 拍</string>
+
+    <string-array name="tempo_markings">
+        <item>Grave · 庄板</item>
+        <item>Largo · 广板</item>
+        <item>Lento · 慢板</item>
+        <item>Larghetto · 小广板</item>
+        <item>Adagio · 柔板</item>
+        <item>Andante · 行板</item>
+        <item>Moderato · 中板</item>
+        <item>Allegro · 快板</item>
+        <item>Vivace · 活泼地</item>
+        <item>Presto · 急板</item>
+        <item>Prestissimo · 最急板</item>
+    </string-array>
+
+    <string-array name="subdivision_names">
+        <item>四分音符</item>
+        <item>八分音符</item>
+        <item>三连音</item>
+        <item>十六分音符</item>
+    </string-array>
+    <string-array name="subdivision_short">
+        <item>四分</item>
+        <item>八分</item>
+        <item>三连音</item>
+        <item>十六分</item>
+    </string-array>
+    <string-array name="subdivision_desc">
+        <item>每拍 1 下</item>
+        <item>每拍 2 下</item>
+        <item>每拍 3 下</item>
+        <item>每拍 4 下</item>
+    </string-array>
+
+    <string-array name="sound_names">
+        <item>木鱼</item>
+        <item>电子</item>
+        <item>牛铃</item>
+        <item>哔声</item>
+        <item>鼓棒</item>
+        <item>机械</item>
+    </string-array>
+    <string-array name="sound_desc">
+        <item>温暖、自然的木质敲击</item>
+        <item>干净、明亮的录音室点击</item>
+        <item>金属质感，穿透力强</item>
+        <item>柔和的正弦提示音</item>
+        <item>干脆的鼓棒对击</item>
+        <item>复古机械节拍器</item>
+    </string-array>
+</resources>

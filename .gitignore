@@ -1,0 +1,27 @@
+# Build output
+build/
+*.apk
+*.apk.idsig
+*.aab
+
+# Signing material — never commit a release keystore
+keystore/
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+
+# Local machine / IDE
+local.properties
+.gradle/
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log

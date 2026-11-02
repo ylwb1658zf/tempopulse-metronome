@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TempoPulse Metronome</string>
+    <string name="screen_title">Metronome</string>
+    <string name="tagline">TEMPOPULSE · PRECISION</string>
+    <string name="settings">Settings</string>
+    <string name="presets">Tempo presets</string>
+    <string name="close">Close</string>
+    <string name="done">Done</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="about">About</string>
+
+    <string name="bpm_unit">BPM</string>
+    <string name="play">Start</string>
+    <string name="pause">Stop</string>
+    <string name="tap_tempo">TAP TEMPO</string>
+    <string name="tap_hint">Tap repeatedly to calculate the tempo</string>
+    <string name="status_ready">Ready</string>
+    <string name="status_playing">Playing</string>
+    <string name="status_beat">Playing · beat %1$d</string>
+    <string name="status_error">Could not start the audio engine</string>
+    <string name="footer_engine">Background play · precise audio engine</string>
+    <string name="decrease_tempo">Decrease tempo</string>
+    <string name="increase_tempo">Increase tempo</string>
+    <string name="offset_value_signed">%1$+d ms</string>
+    <string name="beats_common">Common</string>
+    <string name="beats_waltz">Waltz</string>
+    <string name="beats_compound">Compound</string>
+    <string name="beats_duple">Duple</string>
+    <string name="hint_beat">Tap a beat to accent or mute it</string>
+    <string name="hint_beat_mode">Beat %1$d · %2$s</string>
+    <string name="mode_normal">normal</string>
+    <string name="mode_accent">accent</string>
+    <string name="mode_mute">muted</string>
+
+    <string name="presets_subtitle">Keep your favourite tempo and meter</string>
+    <string name="preset_empty">No saved presets yet</string>
+    <string name="preset_empty_desc">Set a tempo, then save it for later.</string>
+    <string name="preset_save_current">Save current tempo</string>
+    <string name="preset_name_hint">Preset name</string>
+    <string name="preset_name_default">%1$d BPM · %2$s</string>
+    <string name="preset_saved">Preset saved</string>
+    <string name="preset_loaded">Loaded · %1$s</string>
+    <string name="preset_deleted">Preset deleted</string>
+    <string name="preset_limit">Up to 20 presets</string>
+    <string name="preset_dialog_title">Save preset</string>
+    <string name="preset_dialog_subtitle">Give this tempo an easy-to-remember name</string>
+    <string name="preset_detail">%1$d BPM · %2$s · %3$s</string>
+    <string name="preset_recommended">Suggested</string>
+    <string name="preset_mine">My presets</string>
+    <string name="preset_builtin_slow">Slow practice</string>
+    <string name="preset_builtin_scales">Scales</string>
+    <string name="preset_builtin_stage">Stage warm-up</string>
+    <string name="preset_load">Load</string>
+    <string name="delete_preset_title">Delete preset?</string>
+    <string name="delete_preset_message">“%1$s” will be removed from the list.</string>
+
+    <string name="signature">Meter</string>
+    <string name="signature_subtitle">Choose the beats and note value per bar</string>
+    <string name="signature_hint">Tap a beat to accent or mute it</string>
+    <string name="subdivision">Subdivision</string>
+    <string name="subdivision_subtitle">Add finer pulses between the beats</string>
+    <string name="sound">Sound</string>
+    <string name="sound_subtitle">Choose the metronome click</string>
+    <string name="sound_preview_hint">Tap to preview and apply</string>
+
+    <string name="settings_subtitle">Tune the metronome to your practice</string>
+    <string name="section_appearance">Appearance</string>
+    <string name="section_playback">Playback</string>
+    <string name="section_beat">Beat</string>
+    <string name="theme_mode">Theme</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_system">System</string>
+    <string name="accent_color">Accent</string>
+    <string name="accent_amber">Amber</string>
+    <string name="accent_mint">Mint</string>
+    <string name="accent_coral">Coral</string>
+    <string name="accent_violet">Violet</string>
+    <string name="volume">Volume</string>
+    <string name="volume_desc">Loudness of the click</string>
+    <string name="keep_awake">Keep screen awake</string>
+    <string name="keep_awake_desc">Prevent the display from sleeping while playing</string>
+    <string name="vibrate">Beat vibration</string>
+    <string name="vibrate_desc">Haptic feedback on accented beats</string>
+    <string name="flash">Beat flash</string>
+    <string name="flash_desc">A subtle full-screen flash on the downbeat</string>
+    <string name="visual_offset">Visual sync offset</string>
+    <string name="visual_offset_desc">Delay of the screen pulse relative to audio, in milliseconds</string>
+    <string name="offset_value">%1$d ms</string>
+    <string name="reset">Reset</string>
+    <string name="background_play_title">Background play</string>
+    <string name="background_play_desc">Enabled · keeps playing when you leave the app</string>
+    <string name="mix_music_title">Play with music</string>
+    <string name="mix_music_desc">No audio-focus takeover, so it layers over backing tracks</string>
+    <string name="accent_help_title">Custom accents</string>
+    <string name="accent_help_desc">Tap a beat to cycle: normal → accent → mute. Beat one is accented by default.</string>
+    <string name="settings_privacy">Privacy &amp; about</string>
+
+    <string name="about_title">About TempoPulse</string>
+    <string name="about_subtitle">A precise metronome for practice and stage</string>
+    <string name="about_body">TempoPulse uses a directly synthesised, low-latency audio engine so every beat stays stable and clear.\n\n• 20–300 BPM with wheel drag and tap tempo\n• 15 meters with per-beat accent or mute\n• Quarter, eighth, triplet and sixteenth subdivisions\n• 6 synthesised sounds and background playback\n• Tempo presets, light / dark themes and accent colours\n\nEverything stays on this device. The app has no network access, collects no data and contains no ads.</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_made">Made for musicians</string>
+    <string name="notification_channel">Metronome playback</string>
+    <string name="notification_channel_desc">Shows the metronome while it is playing</string>
+    <string name="notification_title">Metronome is playing</string>
+    <string name="notification_text">%1$d BPM · %2$s</string>
+    <string name="notification_stop">Stop</string>
+    <string name="notification_start">Start</string>
+    <string name="notification_permission_hint">Allow notifications to control the metronome in the background</string>
+    <string name="audio_error">Could not start audio. Check the device volume or restart the app.</string>
+
+    <string name="time_signature_format">%1$d/%2$d</string>
+    <string name="subdivision_short_format">%1$s</string>
+    <string name="beats_description">%1$d beats</string>
+
+    <string-array name="tempo_markings">
+        <item>Grave</item>
+        <item>Largo</item>
+        <item>Lento</item>
+        <item>Larghetto</item>
+        <item>Adagio</item>
+        <item>Andante</item>
+        <item>Moderato</item>
+        <item>Allegro</item>
+        <item>Vivace</item>
+        <item>Presto</item>
+        <item>Prestissimo</item>
+    </string-array>
+
+    <string-array name="subdivision_names">
+        <item>Quarter notes</item>
+        <item>Eighth notes</item>
+        <item>Triplets</item>
+        <item>Sixteenth notes</item>
+    </string-array>
+    <string-array name="subdivision_short">
+        <item>Quarter</item>
+        <item>Eighth</item>
+        <item>Triplet</item>
+        <item>Sixteenth</item>
+    </string-array>
+    <string-array name="subdivision_desc">
+        <item>1 pulse per beat</item>
+        <item>2 pulses per beat</item>
+        <item>3 pulses per beat</item>
+        <item>4 pulses per beat</item>
+    </string-array>
+
+    <string-array name="sound_names">
+        <item>Woodblock</item>
+        <item>Studio click</item>
+        <item>Cowbell</item>
+        <item>Soft beep</item>
+        <item>Drumstick</item>
+        <item>Mechanical</item>
+    </string-array>
+    <string-array name="sound_desc">
+        <item>Warm, natural wooden knock</item>
+        <item>Clean, bright studio click</item>
+        <item>Metallic and cutting</item>
+        <item>Gentle sine tone</item>
+        <item>Crisp stick-on-stick</item>
+        <item>Vintage mechanical tick</item>
+    </string-array>
+</resources>

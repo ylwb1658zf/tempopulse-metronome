@@ -12,10 +12,14 @@ import java.util.Random;
 
 /**
  * Synthesises the click banks. No sample assets means instant sound switching and
- * deterministic timing; both the accent and normal hit are normalised separately.
+ * deterministic timing. Accent, normal and subdivision hits are generated separately
+ * so subdivisions have their own lighter timbre rather than just a lower gain.
  */
 public final class ClickSynth {
     public static final int SOUND_COUNT = 6;
+    public static final int STYLE_NORMAL = 0;
+    public static final int STYLE_ACCENT = 1;
+    public static final int STYLE_SUBDIVISION = 2;
 
     private static final Map<String, Bank> CACHE = new HashMap<>();
     private static final Object LOCK = new Object();
@@ -25,10 +29,18 @@ public final class ClickSynth {
     public static final class Bank {
         public final float[] normal;
         public final float[] accent;
+        public final float[] subdivision;
 
-        Bank(float[] normal, float[] accent) {
+        Bank(float[] normal, float[] accent, float[] subdivision) {
             this.normal = normal;
             this.accent = accent;
+            this.subdivision = subdivision;
+        }
+
+        public float[] forStyle(int style) {
+            if (style == STYLE_ACCENT) return accent;
+            if (style == STYLE_SUBDIVISION) return subdivision;
+            return normal;
         }
     }
 
@@ -38,7 +50,10 @@ public final class ClickSynth {
         synchronized (LOCK) {
             Bank cached = CACHE.get(key);
             if (cached != null) return cached;
-            Bank made = new Bank(build(sound, false, sampleRate), build(sound, true, sampleRate));
+            Bank made = new Bank(
+                    build(sound, STYLE_NORMAL, sampleRate),
+                    build(sound, STYLE_ACCENT, sampleRate),
+                    build(sound, STYLE_SUBDIVISION, sampleRate));
             CACHE.put(key, made);
             return made;
         }
@@ -55,9 +70,13 @@ public final class ClickSynth {
     }
 
     public static void preview(Context context, int sound, float volume) {
+        preview(context, sound, volume, STYLE_ACCENT);
+    }
+
+    public static void preview(Context context, int sound, float volume, int style) {
         try {
             int rate = nativeSampleRate(context);
-            float[] samples = bank(sound, rate).accent;
+            float[] samples = bank(sound, rate).forStyle(style);
             short[] pcm = new short[samples.length];
             float gain = 0.85f * Math.max(0f, Math.min(1f, volume));
             for (int i = 0; i < samples.length; i++) {
@@ -101,17 +120,26 @@ public final class ClickSynth {
         }
     }
 
-    private static float[] build(int sound, boolean accent, int rate) {
+    private static float[] build(int sound, int style, int rate) {
+        boolean subdivision = style == STYLE_SUBDIVISION;
         double length;
         switch (sound) {
-            case 2: length = 0.18; break;
-            case 3: length = 0.12; break;
-            case 5: length = 0.09; break;
-            default: length = 0.085; break;
+            case 2:
+                length = subdivision ? 0.11 : 0.18;
+                break;
+            case 3:
+                length = subdivision ? 0.08 : 0.12;
+                break;
+            case 5:
+                length = subdivision ? 0.06 : 0.09;
+                break;
+            default:
+                length = subdivision ? 0.06 : 0.085;
+                break;
         }
         int count = Math.max(1, (int) (length * rate));
         float[] out = new float[count];
-        Random random = new Random(sound * 97L + (accent ? 13 : 0) + rate);
+        Random random = new Random(sound * 97L + style * 13L + rate);
         double noisePrev = 0;
 
         for (int i = 0; i < count; i++) {
@@ -120,29 +148,36 @@ public final class ClickSynth {
             switch (sound) {
                 case 0: {
                     // Woodblock: hollow fundamental, fast woody decay.
-                    double f = accent ? 1280 : 880;
-                    double env = Math.exp(-t * 55.0) * (1 - Math.exp(-t * 2600.0));
-                    double noise = random.nextGaussian() * 0.18;
+                    double f = style == STYLE_SUBDIVISION ? 1560
+                            : style == STYLE_ACCENT ? 1280 : 880;
+                    double decay = subdivision ? 96.0 : 55.0;
+                    double env = Math.exp(-t * decay) * (1 - Math.exp(-t * 2600.0));
+                    double noise = random.nextGaussian() * (subdivision ? 0.10 : 0.18);
                     noisePrev = noisePrev * 0.3 + noise * 0.7;
                     sample = env * (Math.sin(2 * Math.PI * f * t) * 0.78
-                            + Math.sin(2 * Math.PI * f * 2.63 * t) * 0.24
+                            + Math.sin(2 * Math.PI * f * 2.63 * t) * (subdivision ? 0.15 : 0.24)
                             + noisePrev);
                     break;
                 }
                 case 1: {
                     // Studio click: tight, bright transient.
-                    double f = accent ? 2600 : 1850;
-                    double env = Math.exp(-t * 150.0);
-                    double noise = random.nextGaussian() * 0.24;
+                    double f = style == STYLE_SUBDIVISION ? 3200
+                            : style == STYLE_ACCENT ? 2600 : 1850;
+                    double decay = subdivision ? 240.0 : 150.0;
+                    double env = Math.exp(-t * decay);
+                    double noise = random.nextGaussian() * (subdivision ? 0.12 : 0.24);
                     noisePrev = noise * 0.8 - noisePrev * 0.2;
                     sample = env * (Math.sin(2 * Math.PI * f * t) * 0.62 + noisePrev);
                     break;
                 }
                 case 2: {
                     // Cowbell: inharmonic metallic partials.
-                    double f1 = accent ? 720 : 540;
-                    double f2 = accent ? 1060 : 800;
-                    double env = Math.exp(-t * 17.0) * (1 - Math.exp(-t * 4000.0));
+                    double f1 = style == STYLE_SUBDIVISION ? 880
+                            : style == STYLE_ACCENT ? 720 : 540;
+                    double f2 = style == STYLE_SUBDIVISION ? 1320
+                            : style == STYLE_ACCENT ? 1060 : 800;
+                    double decay = subdivision ? 38.0 : 17.0;
+                    double env = Math.exp(-t * decay) * (1 - Math.exp(-t * 4000.0));
                     double a = Math.sin(2 * Math.PI * f1 * t);
                     double b = Math.sin(2 * Math.PI * f2 * t);
                     double square = Math.tanh(a * 2.2) * 0.45 + Math.tanh(b * 2.0) * 0.36;
@@ -151,29 +186,37 @@ public final class ClickSynth {
                 }
                 case 3: {
                     // Soft beep.
-                    double f = accent ? 1320 : 880;
-                    double env = (1 - Math.exp(-t * 1400.0)) * Math.exp(-t * 34.0);
+                    double f = style == STYLE_SUBDIVISION ? 1760
+                            : style == STYLE_ACCENT ? 1320 : 880;
+                    double decay = subdivision ? 60.0 : 34.0;
+                    double env = (1 - Math.exp(-t * 1400.0)) * Math.exp(-t * decay);
                     sample = Math.sin(2 * Math.PI * f * t) * env * 0.9;
                     break;
                 }
                 case 4: {
                     // Drumstick: noise crack plus wooden body.
-                    double env = Math.exp(-t * 180.0);
-                    double noise = random.nextGaussian() * 0.6;
+                    double decay = subdivision ? 260.0 : 180.0;
+                    double env = Math.exp(-t * decay);
+                    double noise = random.nextGaussian() * (subdivision ? 0.25 : 0.6);
                     noisePrev = noisePrev * 0.15 + noise * 0.85;
-                    sample = env * (noisePrev * 0.5
-                            + Math.sin(2 * Math.PI * (accent ? 1900 : 1450) * t) * 0.42);
+                    double f = style == STYLE_SUBDIVISION ? 2400
+                            : style == STYLE_ACCENT ? 1900 : 1450;
+                    sample = env * (noisePrev * (subdivision ? 0.28 : 0.5)
+                            + Math.sin(2 * Math.PI * f * t) * 0.42);
                     break;
                 }
                 default: {
                     // Mechanical: short tick with a slightly delayed resonator.
-                    double env = Math.exp(-t * 110.0);
+                    double decay = subdivision ? 160.0 : 110.0;
+                    double env = Math.exp(-t * decay);
                     double delayed = t > 0.004 ? Math.exp(-(t - 0.004) * 80.0) : 0;
-                    double noise = random.nextGaussian() * 0.32;
+                    double noise = random.nextGaussian() * (subdivision ? 0.20 : 0.32);
                     noisePrev = noisePrev * 0.2 + noise * 0.8;
+                    double f = style == STYLE_SUBDIVISION ? 1900
+                            : style == STYLE_ACCENT ? 1450 : 1120;
                     sample = env * noisePrev
-                            + delayed * Math.sin(2 * Math.PI * (accent ? 1450 : 1120) * t) * 0.5
-                            + env * Math.sin(2 * Math.PI * 620 * t) * 0.2;
+                            + delayed * Math.sin(2 * Math.PI * f * t) * (subdivision ? 0.35 : 0.5)
+                            + env * Math.sin(2 * Math.PI * (subdivision ? 760 : 620) * t) * 0.2;
                     break;
                 }
             }
@@ -184,7 +227,7 @@ public final class ClickSynth {
         for (int i = 0; i < fade; i++) {
             out[count - 1 - i] *= (float) i / fade;
         }
-        normalize(out, 0.92f);
+        normalize(out, subdivision ? 0.72f : 0.92f);
         return out;
     }
 

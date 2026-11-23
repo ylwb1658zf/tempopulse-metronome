@@ -14,6 +14,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
@@ -33,6 +34,12 @@ public final class MetronomeService extends Service {
         void onPlaybackState(boolean playing);
         void onTick(int beat, int subdivisionIndex, int beatMode);
         void onError(String message);
+
+        default void onBpmChanged(int bpm) {
+        }
+
+        default void onTrainingState(boolean active, boolean reachedTarget, int remainingSeconds) {
+        }
     }
 
     public final class LocalBinder extends Binder {
@@ -53,6 +60,40 @@ public final class MetronomeService extends Service {
     private Vibrator vibrator;
     private long lastNotificationUpdate;
     private boolean notificationUpdatePosted;
+
+    private boolean trainingActive;
+    private boolean trainingReached;
+    private int trainMode;
+    private int trainIntervalSec;
+    private int trainBars;
+    private int trainIncrementType;
+    private int trainIncrement;
+    private int trainTarget;
+    private int practiceDurationSec;
+    private int trainBarCount;
+    private long practiceStartedAt;
+    private long lastAdvanceAt;
+
+    private final Runnable practiceTicker = new Runnable() {
+        @Override
+        public void run() {
+            if (!trainingActive || !playing) return;
+            long now = SystemClock.elapsedRealtime();
+            if (trainMode == 0 && now - lastAdvanceAt >= trainIntervalSec * 1000L) {
+                advanceTraining();
+                lastAdvanceAt = now;
+            }
+            long elapsed = (now - practiceStartedAt) / 1000L;
+            int remaining = Math.max(0, practiceDurationSec - (int) elapsed);
+            Listener current = listener;
+            if (current != null) current.onTrainingState(true, trainingReached, remaining);
+            if (remaining <= 0) {
+                finishPracticeAndPlayback();
+                return;
+            }
+            main.postDelayed(this, 250);
+        }
+    };
 
     private final Runnable notificationUpdater = () -> {
         notificationUpdatePosted = false;
@@ -75,6 +116,14 @@ public final class MetronomeService extends Service {
             }
             Listener current = listener;
             if (current != null) current.onTick(beat, subdivisionIndex, beatMode);
+            if (trainingActive && subdivisionIndex == 0 && trainMode == 1
+                    && beat == prefs.numerator() - 1) {
+                trainBarCount++;
+                if (trainBarCount >= trainBars) {
+                    trainBarCount = 0;
+                    advanceTraining();
+                }
+            }
         }
 
         @Override
@@ -137,6 +186,7 @@ public final class MetronomeService extends Service {
     @Override
     public void onDestroy() {
         releaseWakeLock();
+        main.removeCallbacks(practiceTicker);
         if (engine != null) engine.release();
         listener = null;
         super.onDestroy();
@@ -148,7 +198,89 @@ public final class MetronomeService extends Service {
 
     public void setListener(Listener listener) {
         this.listener = listener;
-        if (listener != null) listener.onPlaybackState(playing);
+        if (listener != null) {
+            listener.onPlaybackState(playing);
+            if (trainingActive) {
+                int remaining = remainingPracticeSeconds();
+                listener.onTrainingState(true, trainingReached, remaining);
+            }
+        }
+    }
+
+    public boolean isTrainingActive() {
+        return trainingActive;
+    }
+
+    public void startPractice(int mode, int intervalSec, int bars, int incrementType,
+                              int increment, int target, int durationSec) {
+        trainMode = mode == 1 ? 1 : 0;
+        trainIntervalSec = Math.max(5, Math.min(600, intervalSec));
+        trainBars = Math.max(1, Math.min(32, bars));
+        trainIncrementType = incrementType == 1 ? 1 : 0;
+        trainIncrement = Math.max(1, Math.min(50, increment));
+        trainTarget = Prefs.clampBpm(target);
+        practiceDurationSec = Math.max(10, Math.min(7200, durationSec));
+        trainingReached = false;
+        trainBarCount = 0;
+        if (!playing) beginPlayback();
+        if (!playing) return;
+        trainingActive = true;
+        practiceStartedAt = SystemClock.elapsedRealtime();
+        lastAdvanceAt = practiceStartedAt;
+        main.removeCallbacks(practiceTicker);
+        main.post(practiceTicker);
+        notifyTrainingState();
+    }
+
+    public void stopPractice(boolean keepPlaying) {
+        if (!trainingActive) return;
+        trainingActive = false;
+        trainingReached = false;
+        main.removeCallbacks(practiceTicker);
+        notifyTrainingState();
+        if (!keepPlaying) endPlayback(true);
+    }
+
+    public int remainingPracticeSeconds() {
+        if (!trainingActive) return 0;
+        long elapsed = (SystemClock.elapsedRealtime() - practiceStartedAt) / 1000L;
+        return Math.max(0, practiceDurationSec - (int) elapsed);
+    }
+
+    private void advanceTraining() {
+        if (!trainingActive || trainingReached) return;
+        int current = prefs.bpm();
+        int next = trainIncrementType == 0
+                ? current + trainIncrement
+                : Math.round(current * (1f + trainIncrement / 100f));
+        next = Math.min(trainTarget, Math.min(Prefs.MAX_BPM, next));
+        if (next <= current) {
+            trainingReached = true;
+            notifyTrainingState();
+            return;
+        }
+        prefs.setBpm(next);
+        engine.setBpm(next);
+        scheduleNotificationUpdate();
+        Listener currentListener = listener;
+        if (currentListener != null) currentListener.onBpmChanged(next);
+        if (next >= trainTarget) trainingReached = true;
+        notifyTrainingState();
+    }
+
+    private void notifyTrainingState() {
+        Listener current = listener;
+        if (current == null) return;
+        current.onTrainingState(trainingActive, trainingReached,
+                trainingActive ? remainingPracticeSeconds() : 0);
+    }
+
+    private void finishPracticeAndPlayback() {
+        trainingActive = false;
+        trainingReached = false;
+        main.removeCallbacks(practiceTicker);
+        notifyTrainingState();
+        endPlayback(true);
     }
 
     public void beginPlayback() {
@@ -175,6 +307,11 @@ public final class MetronomeService extends Service {
     }
 
     public void endPlayback(boolean stopIfUnbound) {
+        boolean wasTraining = trainingActive;
+        trainingActive = false;
+        trainingReached = false;
+        main.removeCallbacks(practiceTicker);
+        if (wasTraining) notifyTrainingState();
         if (playing) {
             engine.stop();
             playing = false;

@@ -24,6 +24,7 @@ public final class MetronomeEngine {
 
     private static final int CHUNK_FRAMES = 256;
     private static final int MAX_VOICES = 8;
+    private static final float MASTER_GAIN = 1.3f;
 
     private final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -54,7 +55,7 @@ public final class MetronomeEngine {
     public void configure(int bpm, int numerator, int subdivision, int sound,
                           float volume, int[] modes, int visualOffsetMs) {
         this.bpm = Prefs.clampBpm(bpm);
-        this.numerator = Math.max(1, Math.min(12, numerator));
+        this.numerator = Math.max(1, Math.min(Prefs.MAX_BEATS, numerator));
         this.subdivision = Math.max(1, Math.min(4, subdivision));
         this.sound = Math.max(0, Math.min(ClickSynth.SOUND_COUNT - 1, sound));
         this.volume = Math.max(0f, Math.min(1f, volume));
@@ -68,7 +69,7 @@ public final class MetronomeEngine {
     }
 
     public void setMeter(int numerator, int[] modes) {
-        this.numerator = Math.max(1, Math.min(12, numerator));
+        this.numerator = Math.max(1, Math.min(Prefs.MAX_BEATS, numerator));
         this.beatModes = modes == null ? new int[]{1} : Arrays.copyOf(modes, modes.length);
     }
 
@@ -209,13 +210,17 @@ public final class MetronomeEngine {
                     boolean muted = mode == 2;
 
                     if (!muted) {
-                        float gain = volume;
+                        int style;
+                        float gain = volume * MASTER_GAIN;
                         if (mainBeat) {
+                            style = mode == 1 ? ClickSynth.STYLE_ACCENT
+                                    : ClickSynth.STYLE_NORMAL;
                             gain *= mode == 1 ? 1.0f : 0.68f;
                         } else {
-                            gain *= 0.46f;
+                            style = ClickSynth.STYLE_SUBDIVISION;
+                            gain *= 0.52f;
                         }
-                        addVoice(voices, bank, mainBeat && mode == 1, clickFrame, gain);
+                        addVoice(voices, bank, style, clickFrame, gain);
                     }
 
                     scheduleVisual(token, clickFrame, beat, sub, mode, local, rate);
@@ -275,7 +280,7 @@ public final class MetronomeEngine {
         }
     }
 
-    private void addVoice(Voice[] voices, ClickSynth.Bank bank, boolean accent,
+    private void addVoice(Voice[] voices, ClickSynth.Bank bank, int style,
                           long startFrame, float gain) {
         if (gain <= 0.0001f) return;
         Voice free = null;
@@ -286,7 +291,7 @@ public final class MetronomeEngine {
             }
         }
         if (free == null) free = voices[0];
-        free.data = accent ? bank.accent : bank.normal;
+        free.data = bank.forStyle(style);
         free.startFrame = startFrame;
         free.gain = gain;
         free.active = true;

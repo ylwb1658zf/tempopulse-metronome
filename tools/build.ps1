@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Sdk = "",
     [switch]$Clean
 )
@@ -37,7 +37,7 @@ $baseApk = Join-Path $build "base.apk"
 $unsigned = Join-Path $build "TempoPulse-unsigned.apk"
 $aligned = Join-Path $build "TempoPulse-aligned.apk"
 $keystore = Join-Path $root "keystore\tempopulse.jks"
-$outApk = Join-Path $root "TempoPulse-1.0.0.apk"
+$outApk = Join-Path $root "TempoPulse-1.3.1.apk"
 
 if ($Clean -and (Test-Path $build)) { Remove-Item -Recurse -Force $build }
 New-Item -ItemType Directory -Force -Path $build, $gen, $classes, $dex | Out-Null
@@ -49,7 +49,7 @@ if ($LASTEXITCODE -ne 0) { throw "aapt2 compile failed" }
 Write-Host "==> Linking resources"
 & $aapt2 link -o $baseApk -I $androidJar --manifest (Join-Path $app "AndroidManifest.xml") `
     -R $resZip --java $gen --auto-add-overlay -A (Join-Path $app "assets") `
-    --min-sdk-version 23 --target-sdk-version 35 --version-code 1 --version-name "1.0.0"
+    --min-sdk-version 23 --target-sdk-version 35 --version-code 9 --version-name "1.3.1"
 if ($LASTEXITCODE -ne 0) { throw "aapt2 link failed" }
 
 Write-Host "==> Compiling Java"

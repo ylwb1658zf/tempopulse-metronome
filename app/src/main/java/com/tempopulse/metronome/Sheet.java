@@ -20,6 +20,8 @@ import android.widget.TextView;
 public class Sheet extends Dialog {
     private final Palette palette;
     private final LinearLayout body;
+    private final MaxHeightScrollView scroll;
+    private float maxHeightFraction = 0.76f;
 
     public Sheet(Activity activity, Palette palette, String title, String subtitle) {
         super(activity);
@@ -64,7 +66,8 @@ public class Sheet extends Dialog {
                 palette, activity.getString(R.string.close), v -> dismiss()));
         card.addView(header);
 
-        MaxHeightScrollView scroll = new MaxHeightScrollView(activity);
+        MaxHeightScrollView scroll = new MaxHeightScrollView(activity, this);
+        this.scroll = scroll;
         scroll.setFillViewport(false);
         scroll.setVerticalScrollBarEnabled(false);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
@@ -114,6 +117,11 @@ public class Sheet extends Dialog {
         return palette;
     }
 
+    public void setTall(boolean tall) {
+        maxHeightFraction = tall ? 0.90f : 0.76f;
+        scroll.requestLayout();
+    }
+
     public void showSheet() {
         show();
         Window window = getWindow();
@@ -133,13 +141,17 @@ public class Sheet extends Dialog {
     }
 
     private static final class MaxHeightScrollView extends ScrollView {
-        MaxHeightScrollView(Activity activity) {
+        private final Sheet sheet;
+
+        MaxHeightScrollView(Activity activity, Sheet sheet) {
             super(activity);
+            this.sheet = sheet;
         }
 
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-            int max = (int) (getResources().getDisplayMetrics().heightPixels * 0.76f);
+            int max = (int) (getResources().getDisplayMetrics().heightPixels
+                    * sheet.maxHeightFraction);
             int mode = MeasureSpec.getMode(heightMeasureSpec);
             int size = MeasureSpec.getSize(heightMeasureSpec);
             if (mode == MeasureSpec.UNSPECIFIED || size > max) {

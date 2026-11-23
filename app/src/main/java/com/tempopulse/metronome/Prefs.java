@@ -15,7 +15,8 @@ public final class Prefs {
     public static final int THEME_LIGHT = 1;
     public static final int THEME_SYSTEM = 2;
     public static final int MIN_BPM = 20;
-    public static final int MAX_BPM = 300;
+    public static final int MAX_BPM = 500;
+    public static final int MAX_BEATS = 16;
     public static final int MAX_PRESETS = 20;
 
     private static final String FILE = "tempopulse_prefs";
@@ -33,6 +34,13 @@ public final class Prefs {
     private static final String K_AWAKE = "keep_awake";
     private static final String K_OFFSET = "visual_offset";
     private static final String K_PRESETS = "presets";
+    private static final String K_TRAIN_MODE = "train_mode";
+    private static final String K_TRAIN_INTERVAL = "train_interval";
+    private static final String K_TRAIN_BARS = "train_bars";
+    private static final String K_TRAIN_INC_TYPE = "train_inc_type";
+    private static final String K_TRAIN_INC = "train_inc";
+    private static final String K_TRAIN_TARGET = "train_target";
+    private static final String K_PRACTICE_SECONDS = "practice_seconds";
 
     private final SharedPreferences sp;
 
@@ -142,6 +150,62 @@ public final class Prefs {
         sp.edit().putInt(K_OFFSET, Math.max(-100, Math.min(100, value))).apply();
     }
 
+    public int trainMode() {
+        return sp.getInt(K_TRAIN_MODE, 0) == 1 ? 1 : 0;
+    }
+
+    public void setTrainMode(int mode) {
+        sp.edit().putInt(K_TRAIN_MODE, mode == 1 ? 1 : 0).apply();
+    }
+
+    public int trainIntervalSeconds() {
+        return Math.max(5, Math.min(600, sp.getInt(K_TRAIN_INTERVAL, 60)));
+    }
+
+    public void setTrainIntervalSeconds(int value) {
+        sp.edit().putInt(K_TRAIN_INTERVAL, Math.max(5, Math.min(600, value))).apply();
+    }
+
+    public int trainBars() {
+        return Math.max(1, Math.min(32, sp.getInt(K_TRAIN_BARS, 4)));
+    }
+
+    public void setTrainBars(int value) {
+        sp.edit().putInt(K_TRAIN_BARS, Math.max(1, Math.min(32, value))).apply();
+    }
+
+    public int trainIncrementType() {
+        return sp.getInt(K_TRAIN_INC_TYPE, 0) == 1 ? 1 : 0;
+    }
+
+    public void setTrainIncrementType(int value) {
+        sp.edit().putInt(K_TRAIN_INC_TYPE, value == 1 ? 1 : 0).apply();
+    }
+
+    public int trainIncrement() {
+        return Math.max(1, Math.min(50, sp.getInt(K_TRAIN_INC, 10)));
+    }
+
+    public void setTrainIncrement(int value) {
+        sp.edit().putInt(K_TRAIN_INC, Math.max(1, Math.min(50, value))).apply();
+    }
+
+    public int trainTarget() {
+        return clampBpm(sp.getInt(K_TRAIN_TARGET, Math.min(MAX_BPM, bpm() + 40)));
+    }
+
+    public void setTrainTarget(int value) {
+        sp.edit().putInt(K_TRAIN_TARGET, clampBpm(value)).apply();
+    }
+
+    public int practiceSeconds() {
+        return Math.max(10, Math.min(7200, sp.getInt(K_PRACTICE_SECONDS, 180)));
+    }
+
+    public void setPracticeSeconds(int value) {
+        sp.edit().putInt(K_PRACTICE_SECONDS, Math.max(10, Math.min(7200, value))).apply();
+    }
+
     public int[] beatModes() {
         int n = numerator();
         String raw = sp.getString(K_MODES, null);
@@ -231,7 +295,7 @@ public final class Prefs {
     }
 
     private static int clampNumerator(int n) {
-        return Math.max(1, Math.min(12, n));
+        return Math.max(1, Math.min(MAX_BEATS, n));
     }
 
     private static int clampDenominator(int d) {

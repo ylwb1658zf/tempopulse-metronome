@@ -1,9 +1,9 @@
 package com.tempopulse.metronome;
 
 import android.Manifest;
-import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
@@ -19,6 +19,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.text.InputFilter;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -32,9 +33,9 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -54,17 +55,25 @@ public final class MainActivity extends Activity {
 
     private FrameLayout rootView;
     private LinearLayout shell;
-    private TempoDialView dial;
-    private BeatDotsView dots;
-    private PlayButtonView playButton;
+    private RotaryTempoView rotary;
+    private BeatBarsView bars;
     private TextView statusView;
     private View statusDot;
-    private TextView hintView;
+    private TextView tempoValue;
+    private TextView tempoName;
     private TextView sigValue;
     private TextView subValue;
     private TextView soundValue;
+    private TextView bottomMeter;
+    private TextView trainingButton;
+    private TextView trainingSummaryView;
     private TextView tapButton;
+    private boolean trainingActive;
+    private boolean trainingReached;
+    private int trainingRemaining;
     private View flashOverlay;
+    private boolean landscape;
+    private boolean isTablet;
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ArrayList<Long> tapTimes = new ArrayList<>();
@@ -108,6 +117,16 @@ public final class MainActivity extends Activity {
                 setPlaybackUi(false);
             });
         }
+
+        @Override
+        public void onBpmChanged(int bpm) {
+            ui.post(() -> applyTrainingBpm(bpm));
+        }
+
+        @Override
+        public void onTrainingState(boolean active, boolean reachedTarget, int remainingSeconds) {
+            ui.post(() -> setTrainingUi(active, reachedTarget, remainingSeconds));
+        }
     };
 
     @Override
@@ -132,6 +151,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onStop() {
+        if (rotary != null) rotary.commitCurrent();
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (bound) {
             if (service != null) service.setListener(null);
@@ -174,6 +194,9 @@ public final class MainActivity extends Activity {
     }
 
     private View buildRoot() {
+        landscape = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
+        isTablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
         rootView = new FrameLayout(this);
         BackdropView backdrop = new BackdropView(this, palette);
         rootView.addView(backdrop, new FrameLayout.LayoutParams(
@@ -182,104 +205,20 @@ public final class MainActivity extends Activity {
         shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
-        int width = Math.min(screenWidth, Ui.dp(this, 640));
-        FrameLayout.LayoutParams shellParams = new FrameLayout.LayoutParams(width,
-                ViewGroup.LayoutParams.MATCH_PARENT);
-        shellParams.gravity = Gravity.CENTER_HORIZONTAL;
+        int maxWidth = Ui.dp(this, landscape ? 1280 : (isTablet ? 860 : 760));
+        FrameLayout.LayoutParams shellParams = new FrameLayout.LayoutParams(
+                Math.min(screenWidth, maxWidth), ViewGroup.LayoutParams.MATCH_PARENT);
+        shellParams.gravity = Gravity.CENTER_HORIZONTAL | Gravity.TOP;
         rootView.addView(shell, shellParams);
 
-        shell.addView(buildTopBar());
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.setVerticalScrollBarEnabled(false);
-        scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
-        shell.addView(scroll, scrollParams);
-
-        LinearLayout page = Ui.column(this);
-        page.setPadding(0, 0, 0, Ui.dp(this, 18));
-        scroll.addView(page, new ScrollView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        int density = Math.max(1, (int) getResources().getDisplayMetrics().density);
-        int screenHeightDp = getResources().getDisplayMetrics().heightPixels / density;
-        int dialDp = Math.min(330, Math.max(268, screenHeightDp - 480));
-        dial = new TempoDialView(this, palette);
-        page.addView(dial, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
-                Ui.dp(this, dialDp), 0, Ui.dp(this, 2), 0, 0));
-
-        dots = new BeatDotsView(this, palette);
-        page.addView(dots, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
-                Ui.dp(this, 46), 0, Ui.dp(this, 1), 0, 0));
-
-        hintView = Ui.text(this, getString(R.string.hint_beat), 11.5f, palette.faint,
-                AppFonts.regular(this), Gravity.CENTER);
-        hintView.setPadding(0, Ui.dp(this, 2), 0, Ui.dp(this, 6));
-        page.addView(hintView, Ui.lp(ViewGroup.LayoutParams.MATCH_PARENT,
-                Ui.dp(this, 24)));
-
-        page.addView(buildChips(), Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
-                Ui.dp(this, 52), 0, Ui.dp(this, 14), 0, 0));
-
-        page.addView(buildControls(), Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
-                Ui.dp(this, 108), 0, Ui.dp(this, 8), 0, 0));
-
-        LinearLayout statusRow = Ui.row(this);
-        statusRow.setGravity(Gravity.CENTER);
-        statusDot = new View(this);
-        GradientDrawable dot = new GradientDrawable();
-        dot.setShape(GradientDrawable.OVAL);
-        dot.setColor(palette.faint);
-        statusDot.setBackground(dot);
-        LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(
-                Ui.dp(this, 6), Ui.dp(this, 6));
-        dotParams.rightMargin = Ui.dp(this, 7);
-        statusRow.addView(statusDot, dotParams);
-        statusView = Ui.text(this, getString(R.string.status_ready), 12, palette.dim,
-                AppFonts.regular(this), Gravity.CENTER);
-        statusRow.addView(statusView);
-        page.addView(statusRow, Ui.lp(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 26)));
-
-        tapButton = Ui.label(this, getString(R.string.tap_tempo), 12, palette.text,
-                Gravity.CENTER);
-        tapButton.setLetterSpacing(0.13f);
-        tapButton.setBackground(Ui.rippleRound(this, palette.surface, palette.accentSoft, 23,
-                Palette.withAlpha(palette.stroke, 0xB0), 0.8f));
-        tapButton.setOnClickListener(v -> tapTempo());
-        tapButton.setContentDescription(getString(R.string.tap_tempo));
-        page.addView(tapButton, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
-                Ui.dp(this, 46), 0, Ui.dp(this, 12), 0, 0));
-
-        LinearLayout footer = Ui.row(this);
-        footer.setGravity(Gravity.CENTER);
-        View engineDot = new View(this);
-        GradientDrawable engine = new GradientDrawable();
-        engine.setShape(GradientDrawable.OVAL);
-        engine.setColor(palette.success);
-        engineDot.setBackground(engine);
-        LinearLayout.LayoutParams engineParams = new LinearLayout.LayoutParams(
-                Ui.dp(this, 5), Ui.dp(this, 5));
-        engineParams.rightMargin = Ui.dp(this, 7);
-        footer.addView(engineDot, engineParams);
-        footer.addView(Ui.text(this, getString(R.string.footer_engine), 9.5f,
-                palette.faint, AppFonts.regular(this), Gravity.CENTER));
-        page.addView(footer, Ui.lp(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 22)));
-
-        dial.setListener((bpm, committed) -> {
-            if (committed) prefs.setBpm(bpm);
-            if (service != null) service.setBpmLive(bpm);
-        });
-        dots.setListener((beat, mode) -> {
-            int[] modes = prefs.beatModes();
-            if (beat >= 0 && beat < modes.length) {
-                modes[beat] = mode;
-                prefs.setBeatModes(modes);
-                if (service != null) service.setMeterLive(prefs.numerator(), modes);
-                showBeatModeHint(beat, mode);
-            }
-        });
-        playButton.setOnClickListener(v -> togglePlayback());
+        if (landscape) {
+            shell.addView(buildLandscapeStage(), new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        } else {
+            shell.addView(buildPortraitTopBar());
+            shell.addView(buildPortraitStage(), new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        }
 
         flashOverlay = new View(this);
         flashOverlay.setBackgroundColor(palette.accent);
@@ -292,148 +231,431 @@ public final class MainActivity extends Activity {
         return rootView;
     }
 
-    private View buildTopBar() {
+    private View buildPortraitTopBar() {
         LinearLayout bar = Ui.row(this);
-        bar.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 4));
+        bar.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 1));
 
         FrameLayout logoWrap = new FrameLayout(this);
-        logoWrap.setBackground(Ui.roundRect(this, palette.surfaceAlt, 13,
+        logoWrap.setBackground(Ui.roundRect(this, palette.surfaceAlt, 12,
                 Palette.withAlpha(palette.stroke, 0xB0), 0.8f));
-        ImageView logo = Ui.icon(this, R.drawable.ic_metronome, palette.accent, 25);
-        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(
-                Ui.dp(this, 25), Ui.dp(this, 25));
-        logoParams.gravity = Gravity.CENTER;
-        logoWrap.addView(logo, logoParams);
-        bar.addView(logoWrap, new LinearLayout.LayoutParams(Ui.dp(this, 40), Ui.dp(this, 40)));
+        logoWrap.addView(Ui.icon(this, R.drawable.ic_metronome, palette.accent, 23),
+                centeredParams(23));
+        bar.addView(logoWrap, new LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 36)));
 
         LinearLayout titles = Ui.column(this);
-        titles.setPadding(Ui.dp(this, 11), 0, 0, 0);
-        titles.addView(Ui.label(this, getString(R.string.screen_title), 18,
+        titles.setPadding(Ui.dp(this, 10), 0, 0, 0);
+        titles.addView(Ui.label(this, getString(R.string.screen_title), 17,
                 palette.text, Gravity.START));
-        TextView tagline = Ui.caps(this, getString(R.string.tagline), 7.2f,
+        TextView tagline = Ui.caps(this, getString(R.string.tagline), 6.8f,
                 palette.faint, Gravity.START);
-        tagline.setPadding(0, Ui.dp(this, 4), 0, 0);
+        tagline.setPadding(0, Ui.dp(this, 3), 0, 0);
         titles.addView(tagline);
         bar.addView(titles, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        bar.addView(Ui.iconButton(this, R.drawable.ic_bookmark, palette.dim,
-                palette, getString(R.string.presets), v -> showPresetsSheet()));
-        LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(
-                Ui.dp(this, 44), Ui.dp(this, 44));
-        settingsParams.leftMargin = Ui.dp(this, 1);
-        bar.addView(Ui.iconButton(this, R.drawable.ic_tune, palette.dim,
-                palette, getString(R.string.settings), v -> showSettingsSheet()), settingsParams);
+        LinearLayout actions = Ui.row(this);
+        actions.addView(iconButton(R.drawable.ic_bookmark, getString(R.string.presets),
+                this::showPresetsSheet));
+        actions.addView(iconButton(R.drawable.ic_tune, getString(R.string.settings),
+                this::showSettingsSheet));
+        bar.addView(actions);
         return bar;
     }
 
-    private View buildChips() {
-        LinearLayout row = Ui.row(this);
-        sigValue = chipValue();
-        subValue = chipValue();
-        soundValue = chipValue();
-        row.addView(makeChip(getString(R.string.signature), sigValue,
-                this::showSignatureSheet), chipParams());
-        row.addView(makeChip(getString(R.string.subdivision), subValue,
-                this::showSubdivisionSheet), chipParams());
-        row.addView(makeChip(getString(R.string.sound), soundValue,
-                this::showSoundSheet), chipParams());
-        return row;
+    private View buildPortraitStage() {
+        LinearLayout stage = Ui.column(this);
+        stage.setPadding(0, Ui.dp(this, 2), 0, 0);
+
+        int infoHeight = isTablet ? 96 : 78;
+        int barsHeight = isTablet ? 166 : 128;
+        stage.addView(buildInfoCard(false), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, infoHeight)));
+
+        bars = buildBars();
+        stage.addView(bars, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
+                Ui.dp(this, barsHeight), 0, Ui.dp(this, isTablet ? 10 : 7), 0, 0));
+
+        FrameLayout wheelHost = new SquareHost(this);
+        wheelHost.setPadding(0, Ui.dp(this, 2), 0, Ui.dp(this, 1));
+        rotary = buildRotary();
+        if (isTablet) {
+            int widthDp = getResources().getConfiguration().screenWidthDp;
+            rotary.setMaxDiameterDp(Math.min(440, Math.round(widthDp * 0.58f)));
+        }
+        FrameLayout.LayoutParams wheelParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        wheelParams.gravity = Gravity.CENTER;
+        wheelHost.addView(rotary, wheelParams);
+        stage.addView(wheelHost, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        stage.addView(buildStatusRow(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 21)));
+        stage.addView(buildBottomRow(), Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
+                Ui.dp(this, 50), 0, Ui.dp(this, 4), 0, Ui.dp(this, 2)));
+        return stage;
     }
 
-    private TextView chipValue() {
-        TextView value = Ui.label(this, "—", 14, palette.text, Gravity.START);
-        Ui.setSingleLine(value);
-        return value;
+    private View buildLandscapeStage() {
+        LinearLayout stage = Ui.row(this);
+        stage.setPadding(0, Ui.dp(this, 4), 0, 0);
+
+        LinearLayout left = Ui.column(this);
+        left.setPadding(0, 0, Ui.dp(this, 10), 0);
+        FrameLayout wheelHost = new SquareHost(this);
+        wheelHost.setPadding(Ui.dp(this, 2), Ui.dp(this, 2),
+                Ui.dp(this, 2), Ui.dp(this, 2));
+        rotary = buildRotary();
+        FrameLayout.LayoutParams wheelParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        wheelParams.gravity = Gravity.CENTER;
+        wheelHost.addView(rotary, wheelParams);
+        left.addView(wheelHost, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        FrameLayout controlHost = new FrameLayout(this);
+        controlHost.addView(buildLandscapeControls(), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 54)));
+        LinearLayout.LayoutParams controlParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 54));
+        controlParams.topMargin = Ui.dp(this, 24);
+        left.addView(controlHost, controlParams);
+        left.addView(buildStatusRow(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 18)));
+        stage.addView(left, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 0.40f));
+
+        LinearLayout right = Ui.column(this);
+        right.setPadding(Ui.dp(this, 10), 0, 0, 0);
+        right.addView(buildInfoCard(true), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, isTablet ? 72 : 62)));
+        bars = buildBars();
+        bars.setFillHeight(true);
+        LinearLayout.LayoutParams barsParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        barsParams.topMargin = Ui.dp(this, 6);
+        right.addView(bars, barsParams);
+        stage.addView(right, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 0.60f));
+        return stage;
     }
 
-    private LinearLayout.LayoutParams chipParams() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0,
-                Ui.dp(this, 52), 1f);
+    private View buildLandscapeControls() {
+        LinearLayout controls = Ui.row(this);
+        controls.setGravity(Gravity.CENTER);
+        controls.setPadding(Ui.dp(this, 3), Ui.dp(this, 3),
+                Ui.dp(this, 3), Ui.dp(this, 3));
+        controls.setBackground(Ui.roundRect(this, palette.surface, 16,
+                Palette.withAlpha(palette.stroke, 0x90), 0.8f));
+
+        controls.addView(controlCell(R.drawable.ic_bookmark, getString(R.string.presets),
+                this::showPresetsSheet), weightedParams(1f));
+        controls.addView(controlCell(R.drawable.ic_tune, getString(R.string.settings),
+                this::showSettingsSheet), weightedParams(1f));
+        controls.addView(controlCell(R.drawable.ic_sound, getString(R.string.sound),
+                this::showSoundSheet), weightedParams(1f));
+        controls.addView(controlCell(R.drawable.ic_training, getString(R.string.training_title),
+                this::showTrainingSheet), weightedParams(1f));
+
+        tapButton = Ui.label(this, getString(R.string.tap_short), 11f,
+                palette.onAccent, Gravity.CENTER);
+        tapButton.setLetterSpacing(0.14f);
+        tapButton.setBackground(Ui.rippleRound(this, palette.accent,
+                Palette.withAlpha(palette.onAccent, 0x40), 14));
+        tapButton.setOnClickListener(v -> tapTempo());
+        tapButton.setContentDescription(getString(R.string.tap_tempo));
+        controls.addView(tapButton, weightedParams(1.2f));
+        return controls;
+    }
+
+    private LinearLayout.LayoutParams weightedParams(float weight) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, weight);
         params.setMargins(Ui.dp(this, 2), 0, Ui.dp(this, 2), 0);
         return params;
     }
 
-    private View makeChip(String label, TextView valueView, Runnable action) {
-        LinearLayout chip = Ui.row(this);
-        chip.setBackground(Ui.rippleRound(this, palette.surface, palette.accentSoft, 16,
-                Palette.withAlpha(palette.stroke, 0xB0), 0.8f));
-        chip.setPadding(Ui.dp(this, 12), Ui.dp(this, 7), Ui.dp(this, 8), Ui.dp(this, 7));
-        LinearLayout text = Ui.column(this);
-        text.addView(Ui.caps(this, label, 8.2f, palette.faint, Gravity.START));
-        text.addView(valueView);
-        chip.addView(text, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView chevron = Ui.text(this, "›", 17, palette.faint,
-                AppFonts.regular(this), Gravity.CENTER);
-        chip.addView(chevron);
-        chip.setOnClickListener(v -> action.run());
-        chip.setContentDescription(label);
-        return chip;
+    private FrameLayout controlCell(int resource, String description, Runnable action) {
+        FrameLayout cell = new FrameLayout(this);
+        cell.setClickable(true);
+        cell.setFocusable(true);
+        cell.setContentDescription(description);
+        cell.setBackground(Ui.rippleRound(this, Color.TRANSPARENT, palette.accentSoft, 12));
+        ImageView icon = Ui.icon(this, resource, palette.dim, 22);
+        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
+                Ui.dp(this, 24), Ui.dp(this, 24));
+        iconParams.gravity = Gravity.CENTER;
+        cell.addView(icon, iconParams);
+        cell.setOnClickListener(v -> action.run());
+        return cell;
     }
 
-    private View buildControls() {
-        FrameLayout controls = new FrameLayout(this);
-
-        TextView minus = stepButton("−");
-        minus.setContentDescription(getString(R.string.decrease_tempo));
-        FrameLayout.LayoutParams minusParams = new FrameLayout.LayoutParams(
-                Ui.dp(this, 58), Ui.dp(this, 58));
-        minusParams.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
-        minusParams.leftMargin = Ui.dp(this, 6);
-        controls.addView(minus, minusParams);
-        minus.setOnClickListener(v -> changeBpm(-1));
-        bindRepeat(minus, () -> changeBpm(-1));
-
-        TextView plus = stepButton("+");
-        plus.setContentDescription(getString(R.string.increase_tempo));
-        FrameLayout.LayoutParams plusParams = new FrameLayout.LayoutParams(
-                Ui.dp(this, 58), Ui.dp(this, 58));
-        plusParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
-        plusParams.rightMargin = Ui.dp(this, 6);
-        controls.addView(plus, plusParams);
-        plus.setOnClickListener(v -> changeBpm(1));
-        bindRepeat(plus, () -> changeBpm(1));
-
-        playButton = new PlayButtonView(this, palette);
-        FrameLayout.LayoutParams playParams = new FrameLayout.LayoutParams(
-                Ui.dp(this, 96), Ui.dp(this, 96));
-        playParams.gravity = Gravity.CENTER;
-        controls.addView(playButton, playParams);
-        return controls;
+    private LinearLayout buildSideInfoColumn() {
+        LinearLayout column = Ui.column(this);
+        column.addView(buildSideTempoBlock(), sideParams());
+        column.addView(buildSideMeterBlock(), sideParams());
+        column.addView(buildSideSubdivisionBlock(), sideParams());
+        return column;
     }
 
-    private TextView stepButton(String symbol) {
-        TextView view = Ui.text(this, symbol, 28, palette.text,
-                AppFonts.light(this), Gravity.CENTER);
-        view.setBackground(Ui.rippleRound(this, palette.surface,
-                palette.accentSoft, 29,
+    private LinearLayout.LayoutParams sideParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        params.setMargins(0, Ui.dp(this, 2), 0, Ui.dp(this, 4));
+        return params;
+    }
+
+    private LinearLayout sideBlockShell(Runnable action, String description) {
+        LinearLayout block = Ui.column(this);
+        block.setGravity(Gravity.CENTER_VERTICAL);
+        block.setPadding(Ui.dp(this, 12), Ui.dp(this, 8),
+                Ui.dp(this, 12), Ui.dp(this, 8));
+        block.setBackground(Ui.rippleRound(this, palette.surface, palette.accentSoft,
+                16, Palette.withAlpha(palette.stroke, 0x90), 0.8f));
+        block.setOnClickListener(v -> action.run());
+        block.setContentDescription(description);
+        return block;
+    }
+
+    private View buildSideTempoBlock() {
+        LinearLayout block = sideBlockShell(this::showTargetBpmSheet,
+                getString(R.string.tempo_label));
+        block.addView(Ui.caps(this, getString(R.string.tempo_label), 7.5f,
+                palette.faint, Gravity.START));
+
+        LinearLayout row = Ui.row(this);
+        row.setGravity(Gravity.BOTTOM);
+        tempoValue = Ui.label(this, String.valueOf(prefs == null ? 120 : prefs.bpm()),
+                isTablet ? 28 : 21, palette.text, Gravity.START);
+        tempoValue.setIncludeFontPadding(false);
+        row.addView(tempoValue);
+        TextView unit = Ui.caps(this, getString(R.string.bpm_unit), 8,
+                palette.faint, Gravity.START);
+        unit.setPadding(Ui.dp(this, 3), 0, 0, Ui.dp(this, 3));
+        row.addView(unit);
+        block.addView(row);
+
+        tempoName = Ui.text(this, TempoName.of(this, prefs == null ? 120 : prefs.bpm()),
+                isTablet ? 10 : 8.5f, palette.accent,
+                AppFonts.regular(this), Gravity.START);
+        Ui.setSingleLine(tempoName);
+        tempoName.setPadding(0, Ui.dp(this, 2), 0, 0);
+        block.addView(tempoName);
+        return block;
+    }
+
+    private View buildSideMeterBlock() {
+        LinearLayout block = sideBlockShell(this::showSignatureSheet,
+                getString(R.string.signature));
+        block.addView(Ui.caps(this, getString(R.string.ts_label), 7.5f,
+                palette.faint, Gravity.START));
+        sigValue = Ui.label(this, "4/4", isTablet ? 24 : 18,
+                palette.text, Gravity.START);
+        sigValue.setPadding(0, Ui.dp(this, 4), 0, 0);
+        block.addView(sigValue);
+        return block;
+    }
+
+    private View buildSideSubdivisionBlock() {
+        LinearLayout block = sideBlockShell(this::showSubdivisionSheet,
+                getString(R.string.subdivision));
+        block.addView(Ui.caps(this, getString(R.string.subdiv_label), 7.5f,
+                palette.faint, Gravity.START));
+        subValue = Ui.label(this, "—", isTablet ? 18 : 15,
+                palette.text, Gravity.START);
+        subValue.setPadding(0, Ui.dp(this, 5), 0, 0);
+        block.addView(subValue);
+        return block;
+    }
+
+    private View buildInfoCard(boolean dense) {
+        LinearLayout card = Ui.row(this);
+        card.setPadding(0, 0, 0, 0);
+        card.setBackground(null);
+
+        if (dense) {
+            card.addView(buildTempoBlock(true), blockParams(1f, 2));
+            card.addView(buildMeterBlock(true, true), blockParams(1f, 2));
+            card.addView(buildSubdivisionBlock(true, true), blockParams(1f, 2));
+        } else {
+            card.addView(buildTempoBlock(false), blockParams(1f, 3));
+            card.addView(buildMeterBlock(false, true), blockParams(1f, 3));
+            card.addView(buildSubdivisionBlock(false, true), blockParams(1f, 3));
+        }
+        return card;
+    }
+
+    private LinearLayout.LayoutParams blockParams(float weight, int margin) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, weight);
+        params.setMargins(Ui.dp(this, margin), 0, Ui.dp(this, margin), 0);
+        return params;
+    }
+
+    private LinearLayout infoBlockShell(boolean compact, Runnable action) {
+        LinearLayout block = Ui.column(this);
+        block.setPadding(Ui.dp(this, compact ? 4 : 8), Ui.dp(this, compact ? 2 : 4),
+                Ui.dp(this, compact ? 4 : 8), Ui.dp(this, compact ? 2 : 4));
+        block.setBackground(Ui.rippleRound(this, palette.surfaceAlt, palette.accentSoft,
+                compact ? 10 : 13, Palette.withAlpha(palette.stroke, 0x88), 0.7f));
+        block.setOnClickListener(v -> action.run());
+        block.setContentDescription(getString(R.string.settings));
+        return block;
+    }
+
+    private View buildTempoBlock(boolean compact) {
+        LinearLayout block = infoBlockShell(compact, this::showTargetBpmSheet);
+        block.setGravity(Gravity.CENTER);
+        block.setContentDescription(getString(R.string.tempo_label));
+        block.addView(Ui.caps(this, getString(R.string.tempo_label),
+                compact ? 6.8f : 7f, palette.faint, Gravity.CENTER));
+
+        LinearLayout valueRow = Ui.row(this);
+        valueRow.setGravity(Gravity.CENTER);
+        tempoValue = Ui.label(this, String.valueOf(prefs == null ? 120 : prefs.bpm()),
+                compact ? 19 : 24, palette.text, Gravity.CENTER);
+        tempoValue.setIncludeFontPadding(false);
+        valueRow.addView(tempoValue);
+        TextView unit = Ui.caps(this, getString(R.string.bpm_unit),
+                compact ? 7 : 8, palette.faint, Gravity.CENTER);
+        unit.setPadding(Ui.dp(this, 3), 0, 0, Ui.dp(this, compact ? 1 : 3));
+        valueRow.addView(unit);
+        block.addView(valueRow);
+
+        tempoName = Ui.text(this, TempoName.of(this, prefs == null ? 120 : prefs.bpm()),
+                compact ? 7.5f : 8.5f, palette.accent, AppFonts.regular(this), Gravity.CENTER);
+        tempoName.setPadding(0, Ui.dp(this, compact ? 0 : 1), 0, 0);
+        Ui.setSingleLine(tempoName);
+        block.addView(tempoName);
+        return block;
+    }
+
+    private View buildMeterBlock(boolean compact, boolean centered) {
+        LinearLayout block = infoBlockShell(compact, this::showSignatureSheet);
+        if (centered) block.setGravity(Gravity.CENTER);
+        block.setContentDescription(getString(R.string.signature));
+        block.addView(Ui.caps(this, getString(R.string.ts_label),
+                compact ? 6.8f : 7f, palette.faint,
+                centered ? Gravity.CENTER : Gravity.START));
+        sigValue = Ui.label(this, "4/4", compact ? 17 : 21,
+                palette.text, centered ? Gravity.CENTER : Gravity.START);
+        sigValue.setPadding(0, Ui.dp(this, compact ? 1 : 4), 0, 0);
+        block.addView(sigValue);
+        return block;
+    }
+
+    private View buildSubdivisionBlock(boolean compact, boolean centered) {
+        LinearLayout block = infoBlockShell(compact, this::showSubdivisionSheet);
+        if (centered) block.setGravity(Gravity.CENTER);
+        block.setContentDescription(getString(R.string.subdivision));
+        block.addView(Ui.caps(this, getString(R.string.subdiv_label),
+                compact ? 6.8f : 7f, palette.faint,
+                centered ? Gravity.CENTER : Gravity.START));
+        subValue = Ui.label(this, "—", compact ? 14 : 16,
+                palette.text, centered ? Gravity.CENTER : Gravity.START);
+        subValue.setPadding(0, Ui.dp(this, compact ? 2 : 5), 0, 0);
+        block.addView(subValue);
+        return block;
+    }
+
+    private View buildStatusRow() {
+        LinearLayout row = Ui.row(this);
+        row.setGravity(Gravity.CENTER);
+        statusDot = new View(this);
+        statusDot.setBackground(oval(palette.faint));
+        LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(
+                Ui.dp(this, 6), Ui.dp(this, 6));
+        dotParams.rightMargin = Ui.dp(this, 6);
+        row.addView(statusDot, dotParams);
+        statusView = Ui.text(this, getString(R.string.status_ready), 10.5f,
+                palette.dim, AppFonts.regular(this), Gravity.CENTER);
+        row.addView(statusView);
+        return row;
+    }
+
+    private View buildBottomRow() {
+        LinearLayout row = Ui.row(this);
+        row.setPadding(0, Ui.dp(this, 1), 0, Ui.dp(this, 1));
+
+        trainingButton = Ui.label(this, getString(R.string.training_short), 12,
+                palette.text, Gravity.CENTER);
+        trainingButton.setBackground(Ui.rippleRound(this, palette.surface,
+                palette.accentSoft, 22,
                 Palette.withAlpha(palette.stroke, 0xB0), 0.8f));
-        view.setClickable(true);
-        view.setFocusable(true);
+        trainingButton.setOnClickListener(v -> showTrainingSheet());
+        trainingButton.setContentDescription(getString(R.string.training_title));
+        row.addView(trainingButton, bottomParams());
+
+        soundValue = Ui.label(this, "—", 14, palette.text, Gravity.CENTER);
+        soundValue.setBackground(Ui.rippleRound(this, palette.surface,
+                palette.accentSoft, 22,
+                Palette.withAlpha(palette.stroke, 0xB0), 0.8f));
+        soundValue.setOnClickListener(v -> showSoundSheet());
+        soundValue.setContentDescription(getString(R.string.sound));
+        row.addView(soundValue, bottomParams());
+
+        tapButton = Ui.label(this, getString(R.string.tap_short), 12,
+                palette.onAccent, Gravity.CENTER);
+        tapButton.setLetterSpacing(0.12f);
+        tapButton.setBackground(Ui.rippleRound(this, palette.accent,
+                Palette.withAlpha(palette.onAccent, 0x40), 22));
+        tapButton.setOnClickListener(v -> tapTempo());
+        tapButton.setContentDescription(getString(R.string.tap_tempo));
+        row.addView(tapButton, bottomParams());
+        return row;
+    }
+
+    private LinearLayout.LayoutParams bottomParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        params.setMargins(Ui.dp(this, 3), 0, Ui.dp(this, 3), 0);
+        return params;
+    }
+
+    private BeatBarsView buildBars() {
+        BeatBarsView view = new BeatBarsView(this, palette);
+        view.setListener((beat, mode) -> {
+            int[] modes = prefs.beatModes();
+            if (beat >= 0 && beat < modes.length) {
+                modes[beat] = mode;
+                prefs.setBeatModes(modes);
+                if (service != null) service.setMeterLive(prefs.numerator(), modes);
+                showBeatModeHint(beat, mode);
+            }
+        });
         return view;
     }
 
-    private void bindRepeat(View view, Runnable action) {
-        final Handler handler = new Handler(Looper.getMainLooper());
-        final Runnable[] repeat = new Runnable[1];
-        repeat[0] = () -> {
-            action.run();
-            handler.postDelayed(repeat[0], 65);
-        };
-        view.setOnLongClickListener(v -> {
-            action.run();
-            handler.postDelayed(repeat[0], 280);
-            return true;
-        });
-        view.setOnTouchListener((v, event) -> {
-            int actionMask = event.getActionMasked();
-            if (actionMask == android.view.MotionEvent.ACTION_UP
-                    || actionMask == android.view.MotionEvent.ACTION_CANCEL) {
-                handler.removeCallbacks(repeat[0]);
+    private RotaryTempoView buildRotary() {
+        RotaryTempoView view = new RotaryTempoView(this, palette);
+        view.setListener(new RotaryTempoView.Listener() {
+            @Override
+            public void onBpmChanged(int bpm, boolean committed) {
+                if (committed) prefs.setBpm(bpm);
+                if (service != null) service.setBpmLive(bpm);
+                updateTempoUi();
             }
-            return false;
+
+            @Override
+            public void onPlayTapped() {
+                togglePlayback();
+            }
         });
+        return view;
+    }
+
+    private ImageButton iconButton(int resource, String description, Runnable action) {
+        ImageButton button = Ui.iconButton(this, resource, palette.dim,
+                palette, description, v -> action.run());
+        button.setLayoutParams(new LinearLayout.LayoutParams(
+                Ui.dp(this, 38), Ui.dp(this, 38)));
+        return button;
+    }
+
+    private FrameLayout.LayoutParams centeredParams(int sizeDp) {
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                Ui.dp(this, sizeDp), Ui.dp(this, sizeDp));
+        params.gravity = Gravity.CENTER;
+        return params;
     }
 
     private void applyInsets() {
@@ -495,9 +717,11 @@ public final class MainActivity extends Activity {
     }
 
     private void syncFromPrefs() {
-        if (dial == null) return;
-        dial.setBpm(prefs.bpm(), false);
-        dots.setBeats(prefs.numerator(), prefs.beatModes());
+        if (bars == null) return;
+        if (rotary != null) rotary.setBpm(prefs.bpm(), false);
+        bars.setBeats(prefs.numerator(), prefs.beatModes());
+        bars.setSubdivision(prefs.subdivision());
+        bars.setBpm(prefs.bpm());
         updateChipValues();
         applyKeepScreenOn();
     }
@@ -507,19 +731,51 @@ public final class MainActivity extends Activity {
         int denominator = prefs.denominator();
         String[] shortNames = getResources().getStringArray(R.array.subdivision_short);
         String[] soundNames = getResources().getStringArray(R.array.sound_names);
-        sigValue.setText(getString(R.string.time_signature_format, beats, denominator));
-        subValue.setText(shortNames[Math.max(0,
-                Math.min(shortNames.length - 1, prefs.subdivision() - 1))]);
-        soundValue.setText(soundNames[Math.max(0,
-                Math.min(soundNames.length - 1, prefs.sound()))]);
-        if (dots != null) dots.setBeats(beats, prefs.beatModes());
-        if (dial != null) dial.setBpm(prefs.bpm(), false);
+        String signature = getString(R.string.time_signature_format, beats, denominator);
+        if (sigValue != null) sigValue.setText(signature);
+        if (bottomMeter != null) bottomMeter.setText(signature);
+        if (subValue != null) {
+            subValue.setText(shortNames[Math.max(0,
+                    Math.min(shortNames.length - 1, prefs.subdivision() - 1))]);
+        }
+        if (soundValue != null) {
+            soundValue.setText(soundNames[Math.max(0,
+                    Math.min(soundNames.length - 1, prefs.sound()))]);
+        }
+        updateTempoUi();
+        if (bars != null) {
+            bars.setBeats(beats, prefs.beatModes());
+            bars.setSubdivision(prefs.subdivision());
+            bars.setBpm(prefs.bpm());
+        }
+    }
+
+    private int currentBpm() {
+        return rotary != null ? rotary.bpm() : prefs.bpm();
+    }
+
+    private void updateTempoUi() {
+        int bpm = currentBpm();
+        if (tempoValue != null) tempoValue.setText(String.valueOf(bpm));
+        if (tempoName != null) tempoName.setText(TempoName.of(this, bpm));
+        if (bars != null) bars.setBpm(bpm);
+    }
+
+    private void setBpmValue(int bpm, boolean commit) {
+        int value = Prefs.clampBpm(bpm);
+        if (rotary != null) {
+            rotary.setBpm(value, commit);
+            return;
+        }
+        prefs.setBpm(value);
+        if (service != null) service.setBpmLive(value);
+        updateTempoUi();
     }
 
     private void setPlaybackUi(boolean isPlaying) {
         playing = isPlaying;
-        if (playButton != null) playButton.setPlaying(playing);
-        if (dots != null) dots.setPlaying(playing);
+        if (rotary != null) rotary.setPlaying(playing);
+        if (bars != null) bars.setPlaying(playing);
         if (statusDot != null) {
             statusDot.setBackground(oval(playing ? palette.success : palette.faint));
         }
@@ -527,7 +783,43 @@ public final class MainActivity extends Activity {
             statusView.setText(playing ? R.string.status_playing : R.string.status_ready);
             statusView.setTextColor(playing ? palette.text : palette.dim);
         }
+        if (!playing && trainingActive) {
+            setTrainingUi(false, false, 0);
+        }
         applyKeepScreenOn();
+    }
+
+    private void applyTrainingBpm(int bpm) {
+        prefs.setBpm(bpm);
+        if (rotary != null) rotary.setBpm(bpm, false);
+        updateTempoUi();
+    }
+
+    private void setTrainingUi(boolean active, boolean reachedTarget, int remainingSeconds) {
+        trainingActive = active;
+        trainingReached = reachedTarget;
+        trainingRemaining = remainingSeconds;
+        String label;
+        if (!active) {
+            label = getString(R.string.training_short);
+        } else if (reachedTarget) {
+            label = getString(R.string.training_reached_pill);
+        } else {
+            label = getString(R.string.training_pill, formatDuration(remainingSeconds));
+        }
+        if (trainingButton != null) {
+            trainingButton.setText(label);
+            trainingButton.setTextColor(active ? palette.onAccent : palette.text);
+            trainingButton.setBackground(Ui.rippleRound(this,
+                    active ? palette.accent : palette.surface,
+                    palette.accentSoft, 22,
+                    active ? palette.accent : Palette.withAlpha(palette.stroke, 0xB0), 0.8f));
+        }
+    }
+
+    private String formatDuration(int seconds) {
+        int safe = Math.max(0, seconds);
+        return String.format(Locale.US, "%d:%02d", safe / 60, safe % 60);
     }
 
     private void applyKeepScreenOn() {
@@ -541,10 +833,9 @@ public final class MainActivity extends Activity {
     private void handleTick(int beat, int subdivisionIndex, int beatMode) {
         if (!playing) return;
         if (subdivisionIndex == 0) {
-            dots.setCurrentBeat(beat);
-            playButton.beatPulse();
-            dial.pulse(beatMode);
-            statusView.setText(getString(R.string.status_beat, beat + 1));
+            if (bars != null) bars.setCurrentBeat(beat);
+            if (rotary != null) rotary.beatPulse();
+            if (statusView != null) statusView.setText(getString(R.string.status_beat, beat + 1));
             if (prefs.flash()) flash();
         }
     }
@@ -559,18 +850,18 @@ public final class MainActivity extends Activity {
     private void showBeatModeHint(int beat, int mode) {
         int label = mode == 1 ? R.string.mode_accent : mode == 2 ? R.string.mode_mute
                 : R.string.mode_normal;
-        hintView.setText(getString(R.string.hint_beat_mode, beat + 1, getString(label)));
-        hintView.setTextColor(mode == 2 ? palette.faint : palette.accent);
+        if (statusView != null) {
+            statusView.setText(getString(R.string.hint_beat_mode,
+                    beat + 1, getString(label)));
+            statusView.setTextColor(mode == 2 ? palette.faint : palette.accent);
+        }
         if (hintReset != null) ui.removeCallbacks(hintReset);
-        hintReset = () -> {
-            if (hintView != null) {
-                hintView.setText(R.string.hint_beat);
-                hintView.setTextColor(palette.faint);
-            }
-        };
+        hintReset = () -> setPlaybackUi(playing);
         ui.postDelayed(hintReset, 1600);
-        dots.announceForAccessibility(getString(R.string.hint_beat_mode,
-                beat + 1, getString(label)));
+        if (bars != null) {
+            bars.announceForAccessibility(getString(R.string.hint_beat_mode,
+                    beat + 1, getString(label)));
+        }
     }
 
     private void togglePlayback() {
@@ -611,15 +902,6 @@ public final class MainActivity extends Activity {
         requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
     }
 
-    private void changeBpm(int delta) {
-        int next = Prefs.clampBpm(dial.bpm() + delta);
-        dial.setBpm(next, true);
-        playButton.animate().cancel();
-        playButton.animate().scaleX(0.98f).scaleY(0.98f).setDuration(60)
-                .withEndAction(() -> playButton.animate().scaleX(1f).scaleY(1f)
-                        .setDuration(100).start()).start();
-    }
-
     private void tapTempo() {
         long now = SystemClock.elapsedRealtime();
         if (lastTap == 0 || now - lastTap > 2000) {
@@ -628,11 +910,13 @@ public final class MainActivity extends Activity {
         tapTimes.add(now);
         lastTap = now;
         if (tapTimes.size() > 6) tapTimes.remove(0);
-        tapButton.animate().cancel();
-        tapButton.animate().scaleX(0.98f).scaleY(0.98f).setDuration(55)
-                .withEndAction(() -> tapButton.animate().scaleX(1f).scaleY(1f)
-                        .setDuration(110).start()).start();
-        tapButton.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+        if (tapButton != null) {
+            tapButton.animate().cancel();
+            tapButton.animate().scaleX(0.97f).scaleY(0.97f).setDuration(55)
+                    .withEndAction(() -> tapButton.animate().scaleX(1f).scaleY(1f)
+                            .setDuration(110).start()).start();
+            tapButton.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+        }
         if (tapTimes.size() >= 2) {
             int count = Math.min(4, tapTimes.size() - 1);
             long sum = 0;
@@ -642,10 +926,8 @@ public final class MainActivity extends Activity {
             double average = sum / (double) count;
             if (average > 100) {
                 int bpm = (int) Math.round(60000.0 / average);
-                bpm = Prefs.clampBpm(bpm);
-                dial.setBpm(bpm, false);
-                prefs.setBpm(bpm);
-                if (service != null) service.setBpmLive(bpm);
+                setBpmValue(Prefs.clampBpm(bpm), false);
+                if (rotary != null) rotary.bump();
             }
         }
     }
@@ -670,17 +952,39 @@ public final class MainActivity extends Activity {
         return card;
     }
 
-    private void addSection(LinearLayout body, String label, View content) {
-        body.addView(Ui.sectionLabel(this, label, palette));
-        body.addView(content, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 0, 0, 0, Ui.dp(this, 18)));
-    }
-
     private void showSettingsSheet() {
         Sheet sheet = new Sheet(this, palette, getString(R.string.settings),
                 getString(R.string.settings_subtitle));
         LinearLayout body = sheet.body();
 
+        SegmentedView tabs = new SegmentedView(this, palette,
+                new String[]{getString(R.string.section_appearance),
+                        getString(R.string.section_playback),
+                        getString(R.string.section_beat)}, 0);
+        body.addView(tabs, Ui.lp(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 46)));
+
+        FrameLayout pages = new FrameLayout(this);
+        View appearance = buildAppearanceSettings(sheet);
+        View playback = buildPlaybackSettings();
+        View beat = buildBeatSettings();
+        pages.addView(appearance);
+        pages.addView(playback);
+        pages.addView(beat);
+        playback.setVisibility(View.GONE);
+        beat.setVisibility(View.GONE);
+        body.addView(pages, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 0, Ui.dp(this, 12), 0, 0));
+
+        tabs.setListener(index -> {
+            appearance.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
+            playback.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
+            beat.setVisibility(index == 2 ? View.VISIBLE : View.GONE);
+        });
+        sheet.showSheet();
+    }
+
+    private View buildAppearanceSettings(Sheet sheet) {
+        LinearLayout page = Ui.column(this);
         LinearLayout appearance = card();
         LinearLayout themeTitle = Ui.row(this);
         themeTitle.addView(Ui.label(this, getString(R.string.theme_mode), 14,
@@ -701,11 +1005,35 @@ public final class MainActivity extends Activity {
 
         TextView accentLabel = Ui.label(this, getString(R.string.accent_color), 14,
                 palette.text, Gravity.START);
-        accentLabel.setPadding(0, Ui.dp(this, 18), 0, Ui.dp(this, 10));
+        accentLabel.setPadding(0, Ui.dp(this, 14), 0, Ui.dp(this, 8));
         appearance.addView(accentLabel);
-        appearance.addView(buildAccentPicker(sheet));
-        addSection(body, getString(R.string.section_appearance), appearance);
+        appearance.addView(buildAccentPicker(sheet), Ui.lp(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        page.addView(appearance);
 
+        LinearLayout aboutRow = Ui.row(this);
+        aboutRow.setPadding(0, Ui.dp(this, 10), 0, Ui.dp(this, 8));
+        LinearLayout aboutText = Ui.column(this);
+        aboutText.addView(Ui.label(this, getString(R.string.settings_privacy), 14,
+                palette.text, Gravity.START));
+        aboutText.addView(Ui.text(this, getString(R.string.about_subtitle), 11.5f,
+                palette.dim, AppFonts.regular(this), Gravity.START));
+        aboutRow.addView(aboutText, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        aboutRow.addView(Ui.icon(this, R.drawable.ic_chevron_right, palette.faint, 18));
+        aboutRow.setBackground(Ui.rippleRound(this, Color.TRANSPARENT,
+                palette.accentSoft, 12));
+        aboutRow.setOnClickListener(v -> {
+            sheet.dismiss();
+            showAboutSheet();
+        });
+        page.addView(aboutRow, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 0, Ui.dp(this, 12), 0, 0));
+        return page;
+    }
+
+    private View buildPlaybackSettings() {
+        LinearLayout page = Ui.column(this);
         LinearLayout playback = card();
         LinearLayout volumeHeader = Ui.row(this);
         LinearLayout volumeText = Ui.column(this);
@@ -733,7 +1061,7 @@ public final class MainActivity extends Activity {
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
         playback.addView(volumeSeek, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
-                Ui.dp(this, 40), 0, Ui.dp(this, 6), 0, 0));
+                Ui.dp(this, 34), 0, Ui.dp(this, 2), 0, 0));
 
         addToggleRow(playback, getString(R.string.keep_awake),
                 getString(R.string.keep_awake_desc), prefs.keepAwake(), checked -> {
@@ -741,28 +1069,34 @@ public final class MainActivity extends Activity {
                     applyKeepScreenOn();
                 }, true);
         addToggleRow(playback, getString(R.string.vibrate),
-                getString(R.string.vibrate_desc), prefs.haptic(), checked -> prefs.setHaptic(checked), true);
+                getString(R.string.vibrate_desc), prefs.haptic(),
+                checked -> prefs.setHaptic(checked), true);
         addToggleRow(playback, getString(R.string.flash),
-                getString(R.string.flash_desc), prefs.flash(), checked -> prefs.setFlash(checked), false);
-        addSection(body, getString(R.string.section_playback), playback);
+                getString(R.string.flash_desc), prefs.flash(),
+                checked -> prefs.setFlash(checked), false);
+        page.addView(playback);
 
         LinearLayout info = card();
         info.addView(infoRow(getString(R.string.background_play_title),
                 getString(R.string.background_play_desc), palette.success));
         info.addView(Ui.divider(this, palette.stroke), Ui.margins(
                 ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 1),
-                0, Ui.dp(this, 10), 0, Ui.dp(this, 10)));
+                0, Ui.dp(this, 7), 0, Ui.dp(this, 7)));
         info.addView(infoRow(getString(R.string.mix_music_title),
                 getString(R.string.mix_music_desc), palette.accent));
-        body.addView(info, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 0, 0, 0, Ui.dp(this, 20)));
+        page.addView(info, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 0, Ui.dp(this, 12), 0, 0));
+        return page;
+    }
 
+    private View buildBeatSettings() {
+        LinearLayout page = Ui.column(this);
         LinearLayout beatSection = card();
         beatSection.addView(Ui.label(this, getString(R.string.accent_help_title), 14,
                 palette.text, Gravity.START));
         TextView accentHelp = Ui.text(this, getString(R.string.accent_help_desc), 11.5f,
                 palette.dim, AppFonts.regular(this), Gravity.START);
-        accentHelp.setPadding(0, Ui.dp(this, 5), 0, Ui.dp(this, 12));
+        accentHelp.setPadding(0, Ui.dp(this, 5), 0, Ui.dp(this, 10));
         beatSection.addView(accentHelp);
 
         LinearLayout offsetHeader = Ui.row(this);
@@ -791,33 +1125,19 @@ public final class MainActivity extends Activity {
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
         beatSection.addView(offsetSeek, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
-                Ui.dp(this, 40), 0, Ui.dp(this, 4), 0, 0));
+                Ui.dp(this, 34), 0, Ui.dp(this, 2), 0, 0));
         TextView reset = Ui.label(this, getString(R.string.reset), 11.5f,
                 palette.accent, Gravity.END);
-        reset.setPadding(0, Ui.dp(this, 4), 0, 0);
+        reset.setPadding(0, Ui.dp(this, 2), 0, 0);
         reset.setOnClickListener(v -> offsetSeek.setProgress(100));
         beatSection.addView(reset);
-        addSection(body, getString(R.string.section_beat), beatSection);
+        page.addView(beatSection);
 
-        LinearLayout aboutRow = Ui.row(this);
-        aboutRow.setPadding(0, Ui.dp(this, 6), 0, Ui.dp(this, 6));
-        LinearLayout aboutText = Ui.column(this);
-        aboutText.addView(Ui.label(this, getString(R.string.settings_privacy), 14,
-                palette.text, Gravity.START));
-        aboutText.addView(Ui.text(this, getString(R.string.about_subtitle), 11.5f,
-                palette.dim, AppFonts.regular(this), Gravity.START));
-        aboutRow.addView(aboutText, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        aboutRow.addView(Ui.icon(this, R.drawable.ic_chevron_right, palette.faint, 18));
-        aboutRow.setBackground(Ui.rippleRound(this, Color.TRANSPARENT,
-                palette.accentSoft, 12));
-        aboutRow.setOnClickListener(v -> {
-            sheet.dismiss();
-            showAboutSheet();
-        });
-        body.addView(aboutRow, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 0, 0, 0, Ui.dp(this, 4)));
-        sheet.showSheet();
+        TextView hint = Ui.text(this, getString(R.string.hint_beat), 11.5f,
+                palette.faint, AppFonts.regular(this), Gravity.CENTER);
+        hint.setPadding(0, Ui.dp(this, 14), 0, 0);
+        page.addView(hint);
+        return page;
     }
 
     private View buildAccentPicker(Sheet sheet) {
@@ -938,6 +1258,259 @@ public final class MainActivity extends Activity {
         return row;
     }
 
+    private void showTrainingSheet() {
+        Sheet sheet = new Sheet(this, palette, getString(R.string.training_title),
+                getString(R.string.training_subtitle));
+        sheet.setTall(true);
+        LinearLayout body = sheet.body();
+        body.setMinimumHeight(Ui.dp(this, isTablet ? 560 : 520));
+
+        TextView current = Ui.text(this,
+                getString(R.string.training_current, prefs.bpm()), 12,
+                palette.accent, AppFonts.semibold(this), Gravity.START);
+        current.setPadding(0, 0, 0, Ui.dp(this, 14));
+        body.addView(current);
+
+        String[] modes = {getString(R.string.training_time), getString(R.string.training_bars)};
+        SegmentedView modeTabs = new SegmentedView(this, palette, modes, prefs.trainMode());
+        body.addView(modeTabs, Ui.lp(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 42)));
+
+        TextView intervalValue = trainingValue("");
+        LinearLayout intervalRow = trainingRow(getString(R.string.training_interval), intervalValue);
+        body.addView(intervalRow);
+        intervalRow.setOnClickListener(v -> {
+            boolean timeMode = prefs.trainMode() == 0;
+            showNumberEntry(getString(R.string.training_interval), null,
+                    timeMode ? prefs.trainIntervalSeconds() : prefs.trainBars(),
+                    timeMode ? 5 : 1, timeMode ? 600 : 32,
+                    timeMode ? getString(R.string.training_seconds_unit) : getString(R.string.training_bars_unit),
+                    value -> {
+                        if (prefs.trainMode() == 0) prefs.setTrainIntervalSeconds(value);
+                        else prefs.setTrainBars(value);
+                        refreshTrainingValues(intervalValue, null, null, null);
+                    });
+        });
+
+        TextView incValue = trainingValue("");
+        LinearLayout incRow = trainingRow(getString(R.string.training_increment), incValue);
+        body.addView(incRow);
+        incRow.setOnClickListener(v -> showNumberEntry(getString(R.string.training_increment), null,
+                prefs.trainIncrement(), 1, 50,
+                prefs.trainIncrementType() == 0 ? getString(R.string.bpm_unit) : "%",
+                value -> {
+                    prefs.setTrainIncrement(value);
+                    refreshTrainingValues(null, incValue, null, null);
+                }));
+
+        String[] incTypes = {"+BPM", "%"};
+        SegmentedView incTabs = new SegmentedView(this, palette, incTypes, prefs.trainIncrementType());
+        body.addView(incTabs, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
+                Ui.dp(this, 40), 0, Ui.dp(this, 6), 0, 0));
+        incTabs.setListener(index -> {
+            prefs.setTrainIncrementType(index);
+            refreshTrainingValues(null, incValue, null, null);
+        });
+
+        TextView targetValue = trainingValue("");
+        LinearLayout targetRow = trainingRow(getString(R.string.training_target), targetValue);
+        body.addView(targetRow);
+        targetRow.setOnClickListener(v -> showNumberEntry(getString(R.string.training_target), null,
+                prefs.trainTarget(), 20, 500, getString(R.string.bpm_unit),
+                value -> {
+                    prefs.setTrainTarget(value);
+                    refreshTrainingValues(null, null, targetValue, null);
+                }));
+
+        TextView practiceValue = trainingValue("");
+        LinearLayout practiceRow = trainingRow(getString(R.string.training_practice), practiceValue);
+        body.addView(practiceRow);
+        practiceRow.setOnClickListener(v -> showPracticeDurationSheet(practiceValue));
+
+        trainingSummaryView = Ui.text(this, "", 11.5f, palette.dim,
+                AppFonts.regular(this), Gravity.START);
+        trainingSummaryView.setBackground(Ui.roundRect(this, palette.surfaceAlt, 12,
+                Palette.withAlpha(palette.stroke, 0x80), 0.7f));
+        trainingSummaryView.setPadding(Ui.dp(this, 12), Ui.dp(this, 10),
+                Ui.dp(this, 12), Ui.dp(this, 10));
+        trainingSummaryView.setLineSpacing(Ui.dp(this, 2), 1f);
+        body.addView(trainingSummaryView, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
+                Ui.dp(this, 74), 0, Ui.dp(this, 16), 0, 0));
+
+        TextView start = Ui.label(this, trainingActive
+                        ? getString(R.string.training_stop)
+                        : getString(R.string.training_start),
+                13, palette.onAccent, Gravity.CENTER);
+        start.setBackground(Ui.rippleRound(this, palette.accent,
+                Palette.withAlpha(palette.onAccent, 0x40), 16));
+        start.setOnClickListener(v -> {
+            if (trainingActive) {
+                if (service != null) service.stopPractice(true);
+                sheet.dismiss();
+                return;
+            }
+            if (service == null) {
+                Toast.makeText(this, R.string.training_need_service, Toast.LENGTH_SHORT).show();
+                return;
+            }
+            int target = Math.max(prefs.bpm() + 1, prefs.trainTarget());
+            prefs.setTrainTarget(target);
+            service.startPractice(prefs.trainMode(), prefs.trainIntervalSeconds(),
+                    prefs.trainBars(), prefs.trainIncrementType(),
+                    prefs.trainIncrement(), target, prefs.practiceSeconds());
+            sheet.dismiss();
+        });
+        body.addView(start, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
+                Ui.dp(this, 50), 0, Ui.dp(this, 18), 0, 0));
+
+        modeTabs.setListener(index -> {
+            prefs.setTrainMode(index);
+            refreshTrainingValues(intervalValue, incValue, targetValue, practiceValue);
+        });
+        refreshTrainingValues(intervalValue, incValue, targetValue, practiceValue);
+        sheet.showSheet();
+    }
+
+    private LinearLayout trainingRow(String label, TextView value) {
+        LinearLayout row = Ui.row(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackground(Ui.rippleRound(this, Color.TRANSPARENT,
+                palette.accentSoft, 12));
+        row.setPadding(Ui.dp(this, 4), 0, Ui.dp(this, 4), 0);
+        TextView name = Ui.text(this, label, 12, palette.dim,
+                AppFonts.regular(this), Gravity.START);
+        row.addView(name, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(value, new LinearLayout.LayoutParams(
+                Ui.dp(this, 150), Ui.dp(this, 40)));
+        TextView chevron = Ui.label(this, "›", 18, palette.faint, Gravity.CENTER);
+        row.addView(chevron, new LinearLayout.LayoutParams(
+                Ui.dp(this, 20), Ui.dp(this, 40)));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 52));
+        params.topMargin = Ui.dp(this, 10);
+        row.setLayoutParams(params);
+        return row;
+    }
+
+    private TextView trainingValue(String text) {
+        TextView value = Ui.label(this, text, 12, palette.text, Gravity.CENTER);
+        value.setBackground(Ui.roundRect(this, palette.surfaceAlt, 10,
+                Palette.withAlpha(palette.stroke, 0x90), 0.7f));
+        return value;
+    }
+
+    private void refreshTrainingValues(TextView intervalValue, TextView incValue,
+                                       TextView targetValue, TextView practiceValue) {
+        if (intervalValue != null) {
+            if (prefs.trainMode() == 0) {
+                intervalValue.setText(formatDuration(prefs.trainIntervalSeconds()));
+            } else {
+                intervalValue.setText(getString(R.string.training_bars_value, prefs.trainBars()));
+            }
+        }
+        if (incValue != null) {
+            incValue.setText(prefs.trainIncrementType() == 0
+                    ? getString(R.string.training_bpm_value, prefs.trainIncrement())
+                    : getString(R.string.training_percent_value, prefs.trainIncrement()));
+        }
+        if (targetValue != null) {
+            targetValue.setText(getString(R.string.training_bpm_value, prefs.trainTarget()));
+        }
+        if (practiceValue != null) {
+            int seconds = prefs.practiceSeconds();
+            practiceValue.setText(seconds % 60 == 0
+                    ? getString(R.string.training_minutes_value, seconds / 60)
+                    : formatDuration(seconds));
+        }
+        if (trainingSummaryView != null) {
+            String interval = prefs.trainMode() == 0
+                    ? formatDuration(prefs.trainIntervalSeconds())
+                    : getString(R.string.training_bars_value, prefs.trainBars());
+            String increment = prefs.trainIncrementType() == 0
+                    ? getString(R.string.training_bpm_value, prefs.trainIncrement())
+                    : getString(R.string.training_percent_value, prefs.trainIncrement());
+            String target = getString(R.string.training_bpm_value, prefs.trainTarget());
+            int seconds = prefs.practiceSeconds();
+            String practice = seconds % 60 == 0
+                    ? getString(R.string.training_minutes_value, seconds / 60)
+                    : formatDuration(seconds);
+            trainingSummaryView.setText(getString(R.string.training_summary_format,
+                    interval, increment, target, practice));
+        }
+    }
+
+    private void showPracticeDurationSheet(TextView practiceValue) {
+        Sheet sheet = new Sheet(this, palette, getString(R.string.training_practice),
+                getString(R.string.training_practice_hint));
+        LinearLayout body = sheet.body();
+        LinearLayout presets = Ui.row(this);
+        for (int minutes : new int[]{1, 3, 5}) {
+            TextView chip = Ui.label(this, getString(R.string.training_minutes_value, minutes),
+                    12, palette.text, Gravity.CENTER);
+            chip.setBackground(Ui.rippleRound(this, palette.surfaceAlt, palette.accentSoft,
+                    14, Palette.withAlpha(palette.stroke, 0x90), 0.7f));
+            chip.setOnClickListener(v -> {
+                prefs.setPracticeSeconds(minutes * 60);
+                refreshTrainingValues(null, null, null, practiceValue);
+                sheet.dismiss();
+            });
+            presets.addView(chip, weightedChipParams());
+        }
+        body.addView(presets);
+
+        TextView custom = Ui.label(this, getString(R.string.training_custom), 12,
+                palette.text, Gravity.CENTER);
+        custom.setBackground(Ui.rippleRound(this, palette.surfaceAlt, palette.accentSoft,
+                14, Palette.withAlpha(palette.stroke, 0x90), 0.7f));
+        custom.setOnClickListener(v -> showNumberEntry(getString(R.string.training_practice),
+                null, prefs.practiceSeconds() / 60, 1, 120,
+                getString(R.string.training_minutes_unit), value -> {
+                    prefs.setPracticeSeconds(value * 60);
+                    refreshTrainingValues(null, null, null, practiceValue);
+                    sheet.dismiss();
+                }));
+        body.addView(custom, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
+                Ui.dp(this, 46), 0, Ui.dp(this, 10), 0, 0));
+        sheet.showSheet();
+    }
+
+    private void showNumberEntry(String title, String subtitle, int initial,
+                                 int min, int max, String suffix,
+                                 java.util.function.IntConsumer onApply) {
+        Sheet sheet = new Sheet(this, palette, title,
+                subtitle == null ? "" : subtitle);
+        LinearLayout body = sheet.body();
+        NumberPadView pad = new NumberPadView(this, palette, initial, min, max, suffix);
+        body.addView(pad, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView apply = Ui.label(this, getString(R.string.apply), 13,
+                palette.onAccent, Gravity.CENTER);
+        apply.setBackground(Ui.rippleRound(this, palette.accent,
+                Palette.withAlpha(palette.onAccent, 0x40), 16));
+        apply.setOnClickListener(v -> {
+            onApply.accept(pad.value());
+            sheet.dismiss();
+        });
+        body.addView(apply, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
+                Ui.dp(this, 46), 0, Ui.dp(this, 14), 0, 0));
+        sheet.showSheet();
+    }
+
+    private TextView stepButton(String text) {
+        TextView button = Ui.label(this, text, 18, palette.text, Gravity.CENTER);
+        button.setBackground(Ui.rippleRound(this, palette.surfaceAlt,
+                palette.accentSoft, 10,
+                Palette.withAlpha(palette.stroke, 0x90), 0.7f));
+        return button;
+    }
+
+    private LinearLayout.LayoutParams weightedChipParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0, Ui.dp(this, 40), 1f);
+        params.setMargins(Ui.dp(this, 3), 0, Ui.dp(this, 3), 0);
+        return params;
+    }
+
     private void showSignatureSheet() {
         Sheet sheet = new Sheet(this, palette, getString(R.string.signature),
                 getString(R.string.signature_subtitle));
@@ -946,6 +1519,89 @@ public final class MainActivity extends Activity {
                 palette.dim, AppFonts.regular(this), Gravity.START);
         hint.setPadding(Ui.dp(this, 2), 0, 0, Ui.dp(this, 14));
         body.addView(hint);
+
+        LinearLayout custom = card();
+        TextView customTitle = Ui.text(this, getString(R.string.custom_signature), 12,
+                palette.text, AppFonts.semibold(this), Gravity.START);
+        custom.addView(customTitle);
+
+        int[] customNum = {prefs.numerator()};
+        int[] customDen = {prefs.denominator()};
+        LinearLayout numRow = Ui.row(this);
+        numRow.setGravity(Gravity.CENTER_VERTICAL);
+        numRow.setPadding(0, Ui.dp(this, 8), 0, 0);
+        TextView numeratorLabel = Ui.text(this, getString(R.string.numerator), 11,
+                palette.dim, AppFonts.regular(this), Gravity.START);
+        numRow.addView(numeratorLabel, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView numMinus = stepButton("−");
+        TextView numValue = Ui.label(this, String.valueOf(customNum[0]), 16,
+                palette.text, Gravity.CENTER);
+        numValue.setBackground(Ui.roundRect(this, palette.surfaceAlt, 10,
+                Palette.withAlpha(palette.stroke, 0x90), 0.7f));
+        TextView numPlus = stepButton("+");
+        numRow.addView(numMinus, new LinearLayout.LayoutParams(Ui.dp(this, 34), Ui.dp(this, 32)));
+        numRow.addView(numValue, new LinearLayout.LayoutParams(Ui.dp(this, 68), Ui.dp(this, 32)));
+        numRow.addView(numPlus, new LinearLayout.LayoutParams(Ui.dp(this, 34), Ui.dp(this, 32)));
+        custom.addView(numRow);
+
+        LinearLayout denRow = Ui.row(this);
+        denRow.setGravity(Gravity.CENTER_VERTICAL);
+        denRow.setPadding(0, Ui.dp(this, 6), 0, 0);
+        TextView denominatorLabel = Ui.text(this, getString(R.string.denominator), 11,
+                palette.dim, AppFonts.regular(this), Gravity.START);
+        denRow.addView(denominatorLabel, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        int[] denominators = {2, 4, 8, 16};
+        TextView[] denChips = new TextView[denominators.length];
+        for (int i = 0; i < denominators.length; i++) {
+            int den = denominators[i];
+            TextView chip = Ui.label(this, String.valueOf(den), 12, palette.text, Gravity.CENTER);
+            chip.setOnClickListener(v -> {
+                customDen[0] = den;
+                for (int j = 0; j < denChips.length; j++) {
+                    boolean selected = denominators[j] == customDen[0];
+                    denChips[j].setTextColor(selected ? palette.onAccent : palette.text);
+                    denChips[j].setBackground(Ui.rippleRound(this,
+                            selected ? palette.accent : palette.surfaceAlt,
+                            palette.accentSoft, 10,
+                            selected ? palette.accent : Palette.withAlpha(palette.stroke, 0x90), 0.7f));
+                }
+            });
+            denChips[i] = chip;
+            denRow.addView(chip, Ui.margins(Ui.dp(this, 38), Ui.dp(this, 32), Ui.dp(this, 2), 0,
+                    Ui.dp(this, 2), 0));
+        }
+        custom.addView(denRow);
+
+        TextView apply = Ui.label(this, getString(R.string.apply), 12,
+                palette.onAccent, Gravity.CENTER);
+        apply.setBackground(Ui.rippleRound(this, palette.accent,
+                Palette.withAlpha(palette.onAccent, 0x40), 12));
+        apply.setOnClickListener(v -> {
+            applyMeter(customNum[0], customDen[0]);
+            sheet.dismiss();
+        });
+        custom.addView(apply, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
+                Ui.dp(this, 34), 0, Ui.dp(this, 8), 0, 0));
+        body.addView(custom);
+
+        numMinus.setOnClickListener(v -> {
+            customNum[0] = Math.max(1, customNum[0] - 1);
+            numValue.setText(String.valueOf(customNum[0]));
+        });
+        numPlus.setOnClickListener(v -> {
+            customNum[0] = Math.min(Prefs.MAX_BEATS, customNum[0] + 1);
+            numValue.setText(String.valueOf(customNum[0]));
+        });
+        for (int j = 0; j < denChips.length; j++) {
+            boolean selected = denominators[j] == customDen[0];
+            denChips[j].setTextColor(selected ? palette.onAccent : palette.text);
+            denChips[j].setBackground(Ui.rippleRound(this,
+                    selected ? palette.accent : palette.surfaceAlt,
+                    palette.accentSoft, 10,
+                    selected ? palette.accent : Palette.withAlpha(palette.stroke, 0x90), 0.7f));
+        }
 
         int[][] signatures = {{1, 4}, {2, 4}, {3, 4}, {4, 4}, {5, 4},
                 {6, 4}, {7, 4}, {3, 8}, {5, 8}, {6, 8}, {7, 8}, {9, 8},
@@ -996,7 +1652,7 @@ public final class MainActivity extends Activity {
     private void applyMeter(int numerator, int denominator) {
         prefs.setMeter(numerator, denominator);
         int[] modes = prefs.beatModes();
-        dots.setBeats(numerator, modes);
+        if (bars != null) bars.setBeats(numerator, modes);
         updateChipValues();
         if (service != null) {
             service.setMeterLive(numerator, modes);
@@ -1256,8 +1912,8 @@ public final class MainActivity extends Activity {
         prefs.setSubdivision(preset.subdivision);
         prefs.setSound(preset.sound);
         prefs.setBeatModes(preset.beatModes);
-        dial.setBpm(prefs.bpm(), false);
-        dots.setBeats(prefs.numerator(), prefs.beatModes());
+        setBpmValue(prefs.bpm(), false);
+        if (bars != null) bars.setBeats(prefs.numerator(), prefs.beatModes());
         updateChipValues();
         if (service != null) service.refreshFromPrefs();
     }
@@ -1323,6 +1979,72 @@ public final class MainActivity extends Activity {
         }, 220);
     }
 
+    private void showTargetBpmSheet() {
+        Sheet sheet = new Sheet(this, palette, getString(R.string.target_bpm_title),
+                getString(R.string.target_bpm_subtitle));
+        sheet.setTall(true);
+        LinearLayout body = sheet.body();
+
+        TextView current = Ui.label(this,
+                getString(R.string.target_current, currentBpm()), 13, palette.accent,
+                Gravity.CENTER);
+        current.setPadding(0, 0, 0, Ui.dp(this, 10));
+        body.addView(current, Ui.lp(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        NumberPadView pad = new NumberPadView(this, palette, currentBpm(),
+                Prefs.MIN_BPM, Prefs.MAX_BPM, getString(R.string.bpm_unit));
+        body.addView(pad, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView jump = Ui.label(this, getString(R.string.target_jump), 13,
+                palette.onAccent, Gravity.CENTER);
+        jump.setBackground(Ui.rippleRound(this, palette.accent,
+                Palette.withAlpha(palette.onAccent, 0x40), 23));
+        jump.setOnClickListener(v -> applyTargetBpm(pad.value(), sheet, pad));
+        body.addView(jump, Ui.margins(ViewGroup.LayoutParams.MATCH_PARENT,
+                Ui.dp(this, 44), 0, Ui.dp(this, 10), 0, 0));
+
+        TextView commonLabel = Ui.label(this, getString(R.string.target_common), 11,
+                palette.faint, Gravity.START);
+        commonLabel.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 6));
+        body.addView(commonLabel);
+
+        int[] common = {60, 80, 100, 120, 140, 160, 180, 200};
+        for (int rowIndex = 0; rowIndex < 2; rowIndex++) {
+            LinearLayout row = Ui.row(this);
+            for (int col = 0; col < 4; col++) {
+                int value = common[rowIndex * 4 + col];
+                TextView chip = Ui.label(this, String.valueOf(value), 13,
+                        palette.text, Gravity.CENTER);
+                chip.setBackground(Ui.rippleRound(this, palette.surfaceAlt,
+                        palette.accentSoft, 14,
+                        Palette.withAlpha(palette.stroke, 0xB0), 0.8f));
+                chip.setPadding(0, Ui.dp(this, 9), 0, Ui.dp(this, 9));
+                chip.setContentDescription(getString(R.string.target_choose_bpm, value));
+                chip.setOnClickListener(v -> {
+                    pad.setValue(value);
+                    applyTargetBpm(value, sheet, pad);
+                });
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0,
+                        Ui.dp(this, 36), 1f);
+                params.setMargins(Ui.dp(this, 2), Ui.dp(this, 2),
+                        Ui.dp(this, 2), Ui.dp(this, 2));
+                row.addView(chip, params);
+            }
+            body.addView(row);
+        }
+
+        sheet.showSheet();
+    }
+
+    private void applyTargetBpm(int value, Sheet sheet, View focus) {
+        setBpmValue(Prefs.clampBpm(value), true);
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) imm.hideSoftInputFromWindow(focus.getWindowToken(), 0);
+        sheet.dismiss();
+    }
+
     private void showAboutSheet() {
         Sheet sheet = new Sheet(this, palette, getString(R.string.about_title),
                 getString(R.string.about_subtitle));
@@ -1365,7 +2087,41 @@ public final class MainActivity extends Activity {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception e) {
-            return "1.0.0";
+            return "1.3.1";
+        }
+    }
+
+    private static final class SquareHost extends FrameLayout {
+        SquareHost(Context context) {
+            super(context);
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            int width = MeasureSpec.getSize(widthMeasureSpec);
+            int height = MeasureSpec.getSize(heightMeasureSpec);
+            int size = Math.max(1, Math.min(width, height));
+            int exact = MeasureSpec.makeMeasureSpec(size, MeasureSpec.EXACTLY);
+            for (int i = 0; i < getChildCount(); i++) {
+                getChildAt(i).measure(exact, exact);
+            }
+            setMeasuredDimension(width, height);
+        }
+
+        @Override
+        protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+            int width = right - left;
+            int height = bottom - top;
+            for (int i = 0; i < getChildCount(); i++) {
+                View child = getChildAt(i);
+                int childWidth = child.getMeasuredWidth();
+                int childHeight = child.getMeasuredHeight();
+                int childLeft = getPaddingLeft()
+                        + (width - getPaddingLeft() - getPaddingRight() - childWidth) / 2;
+                int childTop = getPaddingTop()
+                        + (height - getPaddingTop() - getPaddingBottom() - childHeight) / 2;
+                child.layout(childLeft, childTop, childLeft + childWidth, childTop + childHeight);
+            }
         }
     }
 

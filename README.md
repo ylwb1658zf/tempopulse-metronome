@@ -36,11 +36,13 @@ A polished, native Android metronome built with Java and framework views. No thi
 
 ## Install
 
-Use the local **`TempoPulse-1.3.1.apk`** test build (the GitHub Release will be published after device testing):
+Download the latest Android build from the [GitHub Releases page](https://github.com/ylwb1658zf/tempopulse-metronome/releases/latest):
 
 ```bash
 adb install -r TempoPulse-1.3.1.apk
 ```
+
+The source archive for this release is also attached to the GitHub Release.
 
 On Android 13+, allow notifications if you want to control playback from the notification shade.
 

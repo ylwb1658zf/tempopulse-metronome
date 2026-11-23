@@ -58,11 +58,13 @@
 
 ## 安装
 
-使用本地测试包 `TempoPulse-1.3.1.apk`（测试通过后再发布到 GitHub Releases）：
+从 [GitHub Releases](https://github.com/ylwb1658zf/tempopulse-metronome/releases/latest) 下载最新 APK：
 
 ```bash
 adb install -r TempoPulse-1.3.1.apk
 ```
+
+本版本的完整源码压缩包也附在 GitHub Release 中。
 
 也可以把 APK 复制到手机后直接打开安装（需允许安装未知来源应用）。
 

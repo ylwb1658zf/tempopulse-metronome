@@ -84,7 +84,9 @@ Caveat
   timing were verified; speaker loudness and device latency need hardware testing.
 
 Publication
-  Not published. v1.3.1 is the local review build.
+  Published: https://github.com/ylwb1658zf/tempopulse-metronome/releases/tag/v1.3.1
+  Tag:       v1.3.1
+  Assets:    TempoPulse-1.3.1.apk, TempoPulse-1.3.1-source.zip
 
 Build
   JDK 17, Android SDK Platform 35, Build-Tools 35.0.0
